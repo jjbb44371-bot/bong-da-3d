@@ -1,80 +1,72 @@
 # Backlog rà soát Bóng Đá 3D 11v11
 
-**Cập nhật:** 2026-10-03 (Asia/Ho_Chi_Minh)  
-**Repo:** `jjbb44371-bot/bong-da-3d`, nhánh `main`  
-**Production:** [bong-da-3d.onrender.com](https://bong-da-3d.onrender.com/) — Render static service `srv-db07vefavr4c73ehdoqg`, workspace `tea-datk3l8u01pc739fp4u0`  
-**Tình trạng trước lượt:** repo sạch tại `19a75a4` (`Add tactical 11v11 team AI`); Render báo deploy live cùng SHA đầy đủ `19a75a4e30879ab680ffea75c788d009f8ca9ba1`, build/deploy thành công. Không tìm thấy backlog/status/TODO nào có sẵn trong `/workspace`; đây là backlog được tạo sau khi kiểm tra.
+**Cập nhật:** 2026-10-03 (Asia/Ho_Chi_Minh), sau production verification
+**Repo:** `jjbb44371-bot/bong-da-3d`, nhánh `main`
+**Production:** [bong-da-3d.onrender.com](https://bong-da-3d.onrender.com/) — Render static service `srv-db07vefavr4c73ehdoqg`, workspace `tea-datk3l8u01pc739fp4u0`
+**Tình trạng trước lượt:** repo sạch tại `19a75a4` (`Add tactical 11v11 team AI`); Render deploy live cùng SHA đầy đủ `19a75a4e30879ab680ffea75c788d009f8ca9ba1`, build/deploy thành công. Không tìm thấy backlog/status/TODO có sẵn trong `/workspace`; tệp này được tạo sau khi kiểm tra. **Trạng thái cuối:** code đã lên `main` ở `512a1954f0dbf2f73af2a07259b110b9b78c5ba0` và production deploy `dep-db0cqqc9v7es73ass900` ở trạng thái live.
 
 ## Tóm tắt audit
 
-- Roster runtime báo **11 người mỗi đội, 10 cầu thủ sân mỗi bên, tổng 22**.
-- Đã kiểm tra mô phỏng AI trong test unit và một vòng mô phỏng 60 giây với possession `home`/`neutral`/`away`.
-- Playwright smoke test trên production trước thay đổi và bản dist thử nghiệm sau thay đổi: start, bàn phím W+Shift, sút giữ lực, đổi kiểu sút Q, pause/resume/restart; bản thử còn kiểm tra nút chạm ở viewport `390×844` và desktop `1280×720`.
-- Không phát hiện lỗi JavaScript runtime trong smoke test. Các asset tĩnh chính trả `200` hoặc `304`; `/favicon.ico` trả `404`.
-- Browser Playwright của phiên này **chặn WebGL2** (`AllowWebgl2:false`), do đó quan sát runtime đi qua Canvas 2D fallback; không được suy diễn đó là lỗi của người dùng hay xác nhận đã chạy nhánh WebGL.
-- Repo dùng static build: Render `buildCommand` là `echo 'Static files are prebuilt in dist/'`, `publishPath=dist`; không có bundler/build script riêng được chạy.
+- Runtime báo **11 người mỗi đội, 10 cầu thủ sân mỗi bên, tổng 22**.
+- Unit test và mô phỏng 60 giây đã kiểm tra AI, đối xứng roster và possession `home`/`neutral`/`away`.
+- Đã thao tác start, W+Shift, sút giữ lực, Q đổi kiểu sút, pause/resume/restart ở desktop; đã thử D-pad/sút/pause/resume bằng pointer trên viewport mobile.
+- Production sau deploy: console **0 lỗi**, 1 cảnh báo WebGL2 bị môi trường Playwright chặn; game chạy Canvas 2D fallback. Các asset chính trả `200/304`; HTML, Canvas JS và WebGL JS tải trực tiếp từ production khớp byte với `dist` của commit.
+- Không tuyên bố đã thực thi nhánh WebGL2 hoặc hoàn tất trọn trận 90 giây; hai việc này chưa được chạy.
+- Render dùng static build: `buildCommand=echo 'Static files are prebuilt in dist/'`, `publishPath=dist`; build event của release đã thành công. Không clear cache.
 
-## Công việc
+## Backlog và kết quả
 
 ### R-20261003-01 — Dừng render scene bị overlay che
 
-- **Trạng thái:** `in_progress` — đã sửa và smoke-test trên bản dist thử; chờ production deploy và xác minh cuối.
-- **Ưu tiên:** P1 / giá trị CPU-pin và pin điện thoại; confidence cao; effort thấp; rủi ro thấp-vừa.
-- **Phạm vi:** vòng lặp Canvas và WebGL khi intro, pause, hoặc kết quả trận đang phủ scene.
-- **Vấn đề / bằng chứng:** trước sửa, `game-canvas.js` gọi `render(now)` ở mọi frame dù `game.active=false`; `game-webgl.js` luôn gọi `renderer.render(scene,camera)`. Browser Playwright cho khoảng 23–25 render/giây sau menu và 12.6 render/giây khi pause trong một lần đo; pause overlay làm scene phía sau không còn hữu ích nhưng vẫn vẽ.
-- **Nguyên nhân:** lệnh render không được điều kiện theo trạng thái trận; chỉ physics/update đã dừng.
-- **Đã làm:** Canvas chỉ render khi trận còn active (toast vẫn được cập nhật); WebGL chỉ gọi renderer khi trận active, nhưng giữ cập nhật camera để không đổi vòng đời camera. Một lần render cuối bị bỏ khi `update` kết thúc trận.
-- **Phương án đã thử:** profile từng pass render; chỉ cache cảnh tĩnh không giải quyết render thừa khi overlay phủ; thêm state gate là cách ít rủi ro và không đổi UI.
-- **Kiểm chứng bản thử:** idle Canvas 1.2 giây có **0 frame render**; pause 1.2 giây giữ nguyên clock và draw counter; resume render trở lại (29 frame/0.7 giây ở lần đo). Keyboard/touch, shot, đổi mode, pause/resume/restart đều tiếp tục hoạt động.
-- **Tests:** `node --test tests/match-ai.test.mjs` 5/5 pass; syntax check source/dist pass; desktop `1280×720` và mobile `390×844` Playwright smoke pass.
-- **Regression/rủi ro:** Canvas path chạy thật; WebGL2 bị môi trường browser chặn nên chỉ kiểm tra source/syntax của nhánh đó. Thay đổi WebGL chỉ bọc `renderer.render` bằng `if(game.active)`, không đổi camera, input, physics, hoặc scene graph.
-- **Bước tiếp:** commit/push `main`, xác nhận auto-deploy, kiểm tra production; xác nhận scene không chạy dưới overlay và resume/start render bình thường. Sau đó chuyển sang `completed` nếu đạt.
+- **Trạng thái:** `completed` — production live và runtime gate đã được đo.
+- **Ưu tiên:** P1; confidence cao; effort thấp; rủi ro thấp-vừa.
+- **Phạm vi/nguyên nhân:** Canvas luôn gọi `render(now)` kể cả lúc `game.active=false`; WebGL luôn gọi `renderer.render(scene,camera)`. Vì intro/pause/result che scene, CPU/GPU vẫn vẽ phần không hữu ích. Browser profile trước sửa ghi khoảng 23–25 render/s sau menu và 12.6 render/s khi pause ở một lần đo.
+- **Đã sửa:** Canvas render chỉ khi trận active, vẫn cập nhật toast; WebGL chỉ render khi active nhưng giữ cập nhật camera; không render thêm frame sau khi trận kết thúc trong `update`.
+- **Phương án/test:** profile các pass; cache scene tĩnh riêng không dừng render thừa nên bổ sung gate theo state. Local và production đều có 0 Canvas ops ở idle sau 1.1–1.2 giây; pause 1.1–1.2 giây giữ nguyên clock và draw counter; resume làm draw counter tăng trở lại. Desktop và mobile start/shot/pause/resume/restart đều đạt.
+- **Production evidence:** sau deploy `dep-db0cqqc9v7es73ass900`, root HTTP `200`; `game-canvas.js` và `game-webgl.js` trên production khớp byte với `dist`; browser production đo `idleCanvasOps=0`, pause `canvasOpsBefore=336364`, `canvasOpsAfter=336364`, resume tăng thêm `102690` ops trong 0.6 giây.
+- **Giới hạn/rủi ro:** WebGL2 runtime chưa quan sát được vì browser báo `AllowWebgl2:false`; phần WebGL chỉ được syntax-check và review source. Thay đổi chỉ bọc lệnh renderer bằng `if(game.active)`, không đổi physics, input, camera hay scene graph.
 
 ### R-20261003-02 — Giảm chi phí lặp của Canvas fallback khi đang chơi
 
-- **Trạng thái:** `in_progress` — thay đổi đã triển khai, qua test và so sánh ảnh bản thử; cần production verification.
-- **Ưu tiên:** P2 / confidence trung bình-cao / effort thấp / rủi ro thấp-vừa.
-- **Phạm vi:** Canvas 2D fallback, không nhằm đổi bố cục hoặc chủ đề hình ảnh.
-- **Vấn đề / bằng chứng:** profile tạm thời trên viewport desktop cho thấy pass nền khoảng `7.55 ms/frame`; khán giả và cỏ cũng tạo nhiều object chiếu cảnh trong các hot loop. Phần sau chỉ là đo trong browser hiện tại, không phải benchmark thiết bị người dùng.
-- **Nguyên nhân:** gradient, sao và vignette không đổi vẫn được tái tạo; các projection loop cấp phát object tạm; danh sách actor bị dựng mới mỗi frame.
-- **Đã làm:** cache backdrop sao/gradient và vignette; tạo sprite khán giả dùng lại; tái sử dụng actor list và buffer output của phép chiếu cho loop khán giả/cỏ. Công thức camera/hình học và thông số UI không đổi.
-- **Phương án đã thử/kết quả:** cache backdrop làm pass nền đo được giảm khoảng `7.55 → 2.96 ms/frame` trong profile instrumented; FPS tổng dao động và không đủ cơ sở để tuyên bố cải thiện tổng thể từ số đo này. Gameplay screenshot bản thử được so trực tiếp với production cũ và không thấy sai lệch bố cục/hình ảnh đáng kể.
-- **Tests:** `node --test tests/match-ai.test.mjs` 5/5 pass; `node --check` toàn bộ JS source và JS dist pass; `cmp` source/dist cho `game-canvas.js` và `game-webgl.js` khớp; Playwright start/shot/pause/resume/restart + desktop/mobile pass.
-- **Regression/rủi ro:** Canvas sprite/raster cache có thể có sai khác khử răng cưa trên DPR cao; test viewport browser hiện tại `dpr=1`. Chưa đo bộ nhớ hay frame-time trên điện thoại vật lý.
-- **Bước tiếp:** production smoke trên trình duyệt thực tế; nếu có report chất lượng hình ảnh/DPR hoặc FPS từ máy người dùng, profiling lại trước khi hạ chất lượng asset.
+- **Trạng thái:** `completed` cho tối ưu đã triển khai; benchmark thiết bị vật lý vẫn là hạng mục follow-up, không phải release blocker.
+- **Ưu tiên:** P2; confidence trung bình-cao; effort thấp; rủi ro thấp-vừa.
+- **Nguyên nhân:** gradient/sao/vignette bất biến được tái tạo mỗi frame; projection loops tạo object tạm; danh sách actor bị dựng lại liên tục.
+- **Đã sửa:** cache backdrop và vignette; sprite khán giả dùng lại; reuse actor list và buffer cho projection crowd/grass. Giữ camera/hình học và UI.
+- **Phương án/kết quả:** profiling instrumented ghi pass nền giảm khoảng `7.55 → 2.96 ms/frame`; FPS tổng dao động, nên không khẳng định tăng FPS tổng. Gameplay screenshot local và production so với production trước sửa không cho thấy sai khác bố cục/hình ảnh đáng kể.
+- **Kiểm chứng:** 5/5 unit tests; toàn bộ JS source/dist syntax-check; source/dist khớp; production desktop `1280×720` và mobile `390×844` smoke pass; mobile `scrollWidth=390`, touch panel trong viewport.
+- **Giới hạn/rủi ro:** DPR=1 trong browser test; chưa đo bộ nhớ/frame-time trên điện thoại vật lý. Nếu có báo cáo chất lượng ảnh/DPR hoặc FPS thực tế, profile lại trước khi giảm chất lượng asset.
 
 ### R-20261003-03 — Xác minh nhánh WebGL2 trên trình duyệt có GPU
 
-- **Trạng thái:** `blocked` cho kiểm thử thực thi ở môi trường hiện tại; source đã syntax-check; giữ trong backlog.
-- **Ưu tiên:** P2 / impact vừa / confidence cao về giới hạn môi trường, chưa có bằng chứng lỗi sản phẩm.
-- **Phạm vi:** renderer WebGL2, camera, render-loop gate khi active.
-- **Bằng chứng:** Playwright console ghi `Failed to create WebGL context: ... AllowWebgl2:false restricts context creation on this system`; game tự chuyển sang Canvas 2D, vì vậy không thể kết luận nhánh WebGL đã chạy.
-- **Đã thử:** production và local preview đều báo cùng giới hạn; Canvas fallback hoạt động; `node --check game-webgl.js` và dist pass. Không thay đổi browser flags/hạ tầng của người dùng.
-- **Phần còn thiếu:** xác minh visual và start/pause/resume/restart trên WebGL2 thật.
-- **Rủi ro:** low-to-medium; thay đổi WebGL là state gate đơn giản nhưng chưa được quan sát runtime.
-- **Dependency / bước tiếp:** cần browser/thiết bị có WebGL2 được cho phép. Khi có điều kiện, chạy desktop WebGL smoke và kiểm tra pause giữ frame, resume render lại.
+- **Trạng thái:** `blocked` cho runtime test trong môi trường hiện tại; chưa có bằng chứng lỗi sản phẩm.
+- **Ưu tiên:** P2; impact vừa; confidence cao về giới hạn môi trường.
+- **Bằng chứng:** Playwright ghi `Failed to create WebGL context: ... AllowWebgl2:false restricts context creation on this system`; production tự fallback Canvas 2D.
+- **Đã thử:** production và local preview; WebGL JS và dist qua `node --check`; Canvas fallback chạy gameplay/pause/resume. Không đổi browser flags hay hạ tầng máy người dùng.
+- **Còn thiếu/rủi ro:** xác minh hình ảnh và start/pause/resume/restart trên WebGL2 thật; thay đổi WebGL là state gate nhỏ nhưng chưa chạy runtime.
+- **Bước tiếp:** khi có browser/thiết bị bật WebGL2, chạy smoke desktop, xác nhận pause giữ frame và resume render lại.
 
 ### R-20261003-04 — `/favicon.ico` trả 404
 
-- **Trạng thái:** `deferred` (non-blocking).
-- **Impact/severity:** thấp; chỉ favicon/tab chrome, không ảnh hưởng gameplay, input, asset sân, hoặc build.
-- **Bằng chứng:** request `/favicon.ico` trả 404 trong Playwright; stylesheet, ảnh sân và module JS chính không lỗi.
-- **Nguyên nhân:** chưa thấy favicon route/file được publish.
-- **Đã làm:** chưa sửa vì không phải lỗi gameplay và không tạo thay đổi hình thức chỉ để có diff.
-- **Rủi ro:** biểu tượng tab/shortcut có thể không hiện.
-- **Bước tiếp:** chỉ thêm favicon nếu được ưu tiên riêng cùng tài sản thương hiệu; không cản phát hành đợt này.
+- **Trạng thái:** `deferred`, non-blocking; severity thấp.
+- **Bằng chứng/nguyên nhân:** request favicon trả 404 trong lần audit trước; không ảnh hưởng gameplay hay asset chính.
+- **Đã làm/rủi ro:** chưa thêm favicon vì không phải lỗi gameplay và không tạo thay đổi hình thức chỉ để có diff; biểu tượng tab/shortcut có thể không hiện.
+- **Bước tiếp:** chỉ thêm khi được ưu tiên riêng cùng tài sản thương hiệu.
 
 ## Phạm vi đã kiểm tra / giới hạn bằng chứng
 
-- **Roster:** metadata runtime 11v11; unit test xác nhận 10 role sân mỗi đội, đúng đối xứng và hai nửa sân.
-- **AI/gameplay:** unit test hiện có + test mới 60 giây mô phỏng; smoke input và một cú sút hợp lệ. Chưa chạy hết trận 90 giây hoặc tự động đạt 3 bàn trong browser.
-- **Input:** keyboard W/Shift/Space/Q/Escape, touch D-pad/shoot, pause/resume/restart đã được thao tác thực tế.
-- **Mobile/layout:** `390×844`, `documentElement.scrollWidth=390`, touch panel nằm trong viewport; không thấy horizontal overflow.
-- **Desktop/layout:** `1280×720`, `scrollWidth=1280`; không thấy horizontal overflow.
-- **Network:** game tĩnh, không phát hiện gameplay API/network session; requests chính `200/304`. Favicon 404 được ghi riêng.
-- **Logs/deploy trước sửa:** Render deploy `dep-db0akhs9v7es73akcd20` live, build và deploy ended thành công; không clear cache. Auto deploy đang bật (`branch=main`, trigger `commit`).
-- **Nguồn đã mở/đối chiếu:** [Production game](https://bong-da-3d.onrender.com/), [GitHub repository](https://github.com/jjbb44371-bot/bong-da-3d), Render service URL từ connector: `https://dashboard.render.com/static/srv-db07vefavr4c73ehdoqg`.
+- **Roster/AI:** metadata runtime 11v11; unit test xác nhận 10 role sân mỗi đội, đúng đối xứng và hai nửa sân; thêm test 60 giây AI với possession luân phiên.
+- **Gameplay/input:** keyboard W/Shift/Space/Q/Escape, pointer D-pad/shoot, shot mode, pause/resume/restart đã được thao tác thực tế. Chưa chạy hết trận 90 giây hoặc tự động đạt 3 bàn trong browser.
+- **Desktop/mobile:** `1280×720` và `390×844`, không horizontal overflow; touch panel có bounds `x=15,y=711,w=360,h=116` trên mobile.
+- **Network/build:** static resources chính `200/304`; Render echo build succeeded; không có backend gameplay session/API được phát hiện; favicon 404 được ghi ở mục riêng.
+- **Console:** production sau deploy 0 errors, một warning do môi trường không cấp WebGL2. Không diễn giải warning này thành lỗi người dùng.
+- **Nguồn đã mở/đối chiếu:** [Production game](https://bong-da-3d.onrender.com/), [GitHub repository](https://github.com/jjbb44371-bot/bong-da-3d), [Render service](https://dashboard.render.com/static/srv-db07vefavr4c73ehdoqg).
 
-## Cập nhật sau deploy
+## Hồ sơ release production
 
-Điền commit/deploy ID, events, HTTP/asset check, desktop/mobile smoke, console/network và kết quả rollback nếu phát hiện lỗi. Chỉ chuyển các mục `in_progress` sang `completed` sau khi xác minh production thực tế.
+- **Từ trạng thái trước:** deploy live `dep-db0akhs9v7es73akcd20`, commit `19a75a4e30879ab680ffea75c788d009f8ca9ba1`.
+- **Commit mới:** `512a1954f0dbf2f73af2a07259b110b9b78c5ba0` — `Avoid rendering hidden match scenes`; đã push lên `main`.
+- **Auto-deploy:** service cấu hình `autoDeploy=yes`, branch `main`, trigger `commit`; đã kiểm tra event sau push nhưng không có deploy mới, nên trigger đúng service qua Render API. Không clear cache.
+- **Deploy/build:** deploy `dep-db0cqqc9v7es73ass900` live; build `bld-db0cqqc9v7es73ass90g` succeeded; `build_ended` event `evt-db0cqs9mgk9c73ciajqg` và `deploy_ended` event `evt-db0cqsijtthc73f3680g` đều success. Trigger `clearCache=false`. Không rollback.
+- **Production HTTP/assets:** HTTP `200`; `last-modified=2026-10-03 09:40:02 UTC`; `index.html`, `game-canvas.js`, `game-webgl.js` đều HTTP `200` và khớp byte với `dist` của commit.
+- **Production browser smoke:** 11v11/22 players; idle Canvas ops `0`; shot desktop `DỨT ĐIỂM!`; Q đổi mode; pause không đổi clock/draw count; resume render lại; restart trả `01:30` và score `0`; mobile touch shot `ĐẶT LÒNG XOÁY!`, pause/resume đạt.
+- **Transient HTTP:** một GET bị peer ngắt (curl 56) trong lúc kiểm tra; lần chẩn đoán kế tiếp qua HTTP/1.1 và các asset checks trả 200, byte khớp. Không còn lỗi production quan sát được.
