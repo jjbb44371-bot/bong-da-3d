@@ -27,6 +27,17 @@ test('nút cảm ứng hỗ trợ giữ bằng Enter/Space và viewport di độ
   assert.match(css, /@media\(max-width:760px\) and \(max-height:620px\)\{\.game-shell\{min-height:100dvh\}\.overlay\{overflow-y:auto/);
 });
 
+test('Space không chặn nút modal, chỉ nhả charge do bàn phím và Escape bỏ qua auto-repeat', () => {
+  for (const source of [canvas, webgl]) {
+    assert.match(source, /if\(e\.code==='Escape'\)\{e\.preventDefault\(\);if\(!e\.repeat\)togglePause\(\);return;\}/);
+    assert.match(source, /e\.target instanceof Element&&e\.target\.closest\('button,\[role="button"\]'\)/);
+    assert.match(source, /spaceKeyConsumed=true/);
+    assert.match(source, /shouldFire=spaceConsumed&&keyboardShotPending/);
+    assert.match(source, /if\(spaceConsumed\)\{e\.preventDefault\(\);if\(shouldFire\)fireShot\(\);\}/);
+    assert.match(source, /(?:shoot|shootButton)\.addEventListener\('keydown',e=>\{if\(e\.code!=='Enter'&&e\.code!=='Space'/);
+  }
+});
+
 test('vòng RAF không tự lặp liên tục khi không chơi và hết toast', () => {
   assert.match(canvas, /function scheduleFrame\(\)\{if\(frameScheduled\)return;frameScheduled=true;requestAnimationFrame\(frame\);\}/);
   assert.match(canvas, /if\(game\.active\|\|game\.toastTime>0\)scheduleFrame\(\)/);

@@ -39,3 +39,8 @@ export function applyBallFlightDamping(ball, dt) {
   ball.vx *= damping;
   ball.vz *= damping;
 }
+
+// Trục +Z hướng ra sân từ khung thành đội khách đang được tấn công.
+export function keeperReboundVelocity(incomingVz) {
+  return Math.max(2.2, Math.abs(incomingVz) * 0.16);
+}

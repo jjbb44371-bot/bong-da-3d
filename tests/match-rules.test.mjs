@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const rulesSource = await readFile(new URL('../match-rules.js', import.meta.url), 'utf8');
-const { applyBallFlightDamping, ballFitsGoalMouth, formatGoalAnnouncement, goalPlaneCrossing, AWAY_GOAL_LINE_Z, AWAY_GOAL_SCORE_PLANE_Z, BALL_RADIUS, GOAL_MOUTH_CENTER_HALF_WIDTH, GOAL_MOUTH_CENTER_MAX_HEIGHT } = await import(`data:text/javascript;base64,${Buffer.from(rulesSource).toString('base64')}`);
+const { applyBallFlightDamping, ballFitsGoalMouth, formatGoalAnnouncement, goalPlaneCrossing, keeperReboundVelocity, AWAY_GOAL_LINE_Z, AWAY_GOAL_SCORE_PLANE_Z, BALL_RADIUS, GOAL_MOUTH_CENTER_HALF_WIDTH, GOAL_MOUTH_CENTER_MAX_HEIGHT } = await import(`data:text/javascript;base64,${Buffer.from(rulesSource).toString('base64')}`);
 
 test('chỉ ghi bàn khi toàn bộ quả bóng lọt giữa cột và dưới xà', () => {
   assert.ok(ballFitsGoalMouth({ x: 0, h: 1 }));
@@ -45,6 +45,20 @@ test('goal mouth được xét tại thời điểm bóng cắt vạch, không x
   assert.equal(goalPlaneCrossing({ x: 0, z: AWAY_GOAL_SCORE_PLANE_Z + 0.1, h: 1 }, { x: 0, z: AWAY_GOAL_SCORE_PLANE_Z + 0.01, h: 1 }, AWAY_GOAL_SCORE_PLANE_Z), null, 'đoạn chưa vượt mặt phẳng ghi bàn không tạo crossing');
   assert.equal(goalPlaneCrossing({ x: 0, z: AWAY_GOAL_SCORE_PLANE_Z + 0.1, h: 1 }, { x: 0, z: AWAY_GOAL_SCORE_PLANE_Z, h: 1 }, AWAY_GOAL_SCORE_PLANE_Z), null, 'bóng vừa chạm mặt phẳng nhưng chưa vượt hết thì chưa ghi bàn');
   assert.ok(Math.abs(goalPlaneCrossing({ x: 0, z: AWAY_GOAL_SCORE_PLANE_Z, h: 1 }, { x: 0, z: AWAY_GOAL_SCORE_PLANE_Z - 0.01, h: 1 }, AWAY_GOAL_SCORE_PLANE_Z)?.fraction ?? 1) < 1e-12, 'bước kế tiếp ghi nhận bóng vừa đi qua mặt phẳng');
+});
+
+test('bóng bật khỏi thủ môn quay ra sân thay vì tiếp tục xuyên vào lưới', async () => {
+  assert.equal(keeperReboundVelocity(-25), 4);
+  assert.equal(keeperReboundVelocity(-6), 2.2, 'rebound giữ vận tốc tối thiểu đã cân chỉnh');
+  let z = -53.4;
+  const vz = keeperReboundVelocity(-25);
+  for (let frame = 0; frame < 30; frame += 1) z += vz / 60;
+  assert.ok(z > -53.4 && z > AWAY_GOAL_LINE_Z, 'quỹ đạo sau cú cứu thua đi xa khỏi khung thành');
+  const [canvas, webgl] = await Promise.all([
+    readFile(new URL('../game-canvas.js', import.meta.url), 'utf8'),
+    readFile(new URL('../game-webgl.js', import.meta.url), 'utf8'),
+  ]);
+  for (const source of [canvas, webgl]) assert.match(source, /ball\.vz=keeperReboundVelocity\(ball\.vz\)/);
 });
 
 test('Canvas và WebGL cùng gọi luật cầu môn và damping dùng chung', async () => {
