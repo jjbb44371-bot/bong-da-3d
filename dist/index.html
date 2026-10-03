@@ -35,7 +35,7 @@
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <div class="power-wrap" id="power-wrap" aria-hidden="true"><span>LỰC SÚT</span><div class="power-track"><i id="power-fill"></i></div></div>
 
-    <div class="desktop-hint" id="desktop-hint"><span>W A S D</span> DI CHUYỂN <b>SHIFT</b> TĂNG TỐC <span>GIỮ SPACE</span> SÚT <span>A / D</span> NHẮM GÓC</div>
+    <div class="desktop-hint" id="desktop-hint"><span>W A S D</span> RÊ BÓNG <b>SHIFT</b> TĂNG TỐC <span>GIỮ SPACE</span> SÚT <span>A / D</span> NHẮM <span>Q</span> ĐỔI KIỂU</div>
 
     <div class="touch-controls" id="touch-controls" aria-label="Điều khiển cảm ứng">
       <div class="touch-left">
@@ -48,7 +48,8 @@
         <button class="sprint-button" id="sprint-button" type="button" aria-label="Tăng tốc">TĂNG<br>TỐC</button>
       </div>
       <button class="shoot-button" id="shoot-button" type="button" aria-label="Nhấn giữ để sút"><span>⚽</span><b>SÚT</b></button>
-      <div class="touch-aim-hint">GIỮ NÚT SÚT<br>ĐỂ TĂNG LỰC</div>
+      <button class="shot-mode-button" id="shot-mode-button" type="button" aria-label="Đổi kiểu sút">KIỂU: THƯỜNG</button>
+      <div class="touch-aim-hint">GIỮ NÚT SÚT ĐỂ TĂNG LỰC</div>
     </div>
 
     <section class="overlay intro" id="intro" aria-labelledby="intro-title">
@@ -56,11 +57,12 @@
         <div class="eyebrow"><span></span> BÓNG ĐÁ 3D · CHẾ ĐỘ ĐƠN</div>
         <h1 id="intro-title">BÓNG ĐÁ<br><em>3D</em></h1>
         <p class="intro-lead">Một cầu thủ. Một thủ môn. <strong>Ba bàn thắng.</strong></p>
-        <p class="intro-copy">Rê bóng băng qua sân, chọn góc sút và chinh phục khung thành dưới ánh đèn đêm. Thủ môn dần thích nghi với hướng, vị trí và lực sút lặp lại; dữ liệu học chỉ lưu trong trình duyệt này.</p>
+        <p class="intro-copy">Rê bóng qua hàng thủ và chọn cách dứt điểm: sút thường mạnh, đặt lòng xoáy chậm hơn nhưng lượn góc, hoặc lốp bổng qua tầm với. Thủ môn học vị trí đón bóng nhưng phải đọc quỹ đạo với độ trễ và có thể phán đoán sai; pha cản bóng không được bảo đảm.</p>
         <div class="intro-controls">
           <div class="control-chip"><kbd>W A S D</kbd><span>DI CHUYỂN</span></div>
           <div class="control-chip"><kbd>SHIFT</kbd><span>TĂNG TỐC</span></div>
           <div class="control-chip"><kbd>GIỮ SPACE</kbd><span>LẤY LỰC &amp; SÚT</span></div>
+          <div class="control-chip"><kbd>Q</kbd><span>ĐỔI KIỂU SÚT</span></div>
         </div>
         <button id="start-button" class="primary-button" type="button"><span>VÀO SÂN</span><b aria-hidden="true">↗</b></button>
         <div class="intro-foot"><span>90 GIÂY</span><i></i><span>GHI 3 BÀN ĐỂ THẮNG</span><i></i><span>ĐÁ LẠI BẤT CỨ LÚC NÀO</span></div>

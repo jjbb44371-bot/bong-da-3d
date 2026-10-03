@@ -16,12 +16,12 @@ const colors={
 };
 const field={minX:-34,maxX:34,minZ:-54,maxZ:54};
 const keys=new Set(),virtual=new Set();
-const player={x:0,z:31,yaw:0,step:0};
+const player={x:0,z:31,yaw:0,step:0,vx:0,vz:0};
 const defenders=[{x:-10,z:-8,homeX:-10,homeZ:-8,step:0},{x:11,z:-18,homeX:11,homeZ:-18,step:0},{x:-3,z:8,homeX:-3,homeZ:8,step:0}];
-const keeper={x:0,z:-51.4,step:0};
-let keeperPolicyTarget=0;
-const ball={x:0,z:29.7,h:.59,vx:0,vz:0,vy:0,inFlight:false,shotTime:0,pickupDelay:0,rotation:0};
-const game={active:false,paused:false,ended:false,score:0,time:90,charging:false,charge:0,toastTime:0,lastWhole:90};
+const keeper={x:0,z:-51.4,step:0,diveTime:0,diveSide:0};
+let keeperPolicyTarget=0,keeperReactiveTarget=0,keeperReactionWait=0,keeperReadTimer=0;
+const ball={x:0,z:29.7,h:.59,vx:0,vz:0,vy:0,gravity:17.5,curve:0,inFlight:false,shotTime:0,pickupDelay:0,rotation:0};
+const game={active:false,paused:false,ended:false,score:0,time:90,charging:false,charge:0,shotMode:0,toastTime:0,lastWhole:90};
 let lastFrame=performance.now();
 const rand=(()=>{let s=72613;return()=>{s=(s*1664525+1013904223)>>>0;return s/4294967296;};})();
 const crowd=[];
@@ -217,8 +217,8 @@ function showResult(won){
   $('match-state').textContent=won?'CHIẾN THẮNG':'TRẬN ĐẤU KẾT THÚC';$('announcer').textContent=won?'Bạn thắng! Ghi được ba bàn.':'Trận đấu kết thúc.';$('restart-button').focus({preventScroll:true});
 }
 function resetPositions(){
-  Object.assign(player,{x:0,z:31,yaw:0,step:0});defenders.forEach((d,i)=>{const a=[[-10,-8],[11,-18],[-3,8]][i];Object.assign(d,{x:a[0],z:a[1],step:0});});keeper.x=0;keeperPolicyTarget=0;goalkeeperRL.discardShot();
-  Object.assign(ball,{x:0,z:29.7,h:.59,vx:0,vz:0,vy:0,inFlight:false,shotTime:0,pickupDelay:0,rotation:0});
+  Object.assign(player,{x:0,z:31,yaw:0,step:0,vx:0,vz:0});defenders.forEach((d,i)=>{const a=[[-10,-8],[11,-18],[-3,8]][i];Object.assign(d,{x:a[0],z:a[1],step:0});});keeper.x=0;keeperPolicyTarget=0;keeperReactiveTarget=0;keeperReactionWait=0;keeperReadTimer=0;keeper.diveTime=0;goalkeeperRL.discardShot();
+  Object.assign(ball,{x:0,z:29.7,h:.59,vx:0,vz:0,vy:0,gravity:17.5,curve:0,inFlight:false,shotTime:0,pickupDelay:0,rotation:0,goalResolved:false});
   keys.clear();virtual.clear();game.charging=false;game.charge=0;$('power-wrap').classList.remove('visible');
 }
 function beginMatch(){
@@ -230,27 +230,37 @@ function pauseMatch(){if(!game.active||game.ended)return;game.active=false;game.
 function resumeMatch(){if(!game.paused)return;game.paused=false;game.active=true;$('pause-overlay').classList.add('hidden');$('pause-overlay').setAttribute('aria-hidden','true');$('pause-button').focus({preventScroll:true});lastFrame=performance.now();}
 function togglePause(){if(game.active)pauseMatch();else if(game.paused)resumeMatch();}
 function inputState(){const has=(...n)=>n.some(k=>keys.has(k)||virtual.has(k));return{x:Number(has('KeyD','ArrowRight'))-Number(has('KeyA','ArrowLeft')),z:Number(has('KeyS','ArrowDown'))-Number(has('KeyW','ArrowUp')),sprint:has('ShiftLeft','ShiftRight','Sprint')};}
+const SHOT_MODES=[{name:'THƯỜNG',toast:'SÚT THƯỜNG: MẠNH VÀ THẲNG'},{name:'ĐẶT LÒNG',toast:'ĐẶT LÒNG: CHẬM HƠN, BÓNG XOÁY'},{name:'LỐP',toast:'SÚT LỐP: BÓNG BỔNG QUA TẦM VỚI'}];
+function cycleShotMode(){game.shotMode=(game.shotMode+1)%SHOT_MODES.length;const label=SHOT_MODES[game.shotMode].name;$('shot-mode-button').textContent=`KIỂU: ${label}`;$('shot-mode-button').setAttribute('aria-label',`Đổi kiểu sút — hiện tại: ${label}`);$('announcer').textContent=SHOT_MODES[game.shotMode].toast;}
 function beginCharge(){if(!game.active||game.paused||game.ended||game.charging)return;game.charging=true;game.charge=.05;$('power-wrap').classList.add('visible');}
 function fireShot(){
   if(!game.charging)return;game.charging=false;$('power-wrap').classList.remove('visible');if(!game.active||game.paused)return;
   if(Math.hypot(player.x-ball.x,player.z-ball.z)>3.8||ball.inFlight){setToast(ball.inFlight?'CHỜ BÓNG QUAY LẠI':'CHẠY TỚI SÁT BÓNG RỒI SÚT');return;}
   const input=inputState(),targetX=input.x?input.x*6.4:(keeper.x>=0?-6.15:6.15),dx=targetX-ball.x,dz=-55.1-ball.z,len=Math.hypot(dx,dz)||1;
-  const charge=Math.min(1,game.charge/1.25),speed=23+charge*9;
-  ball.vx=dx/len*speed;ball.vz=dz/len*speed;ball.vy=4.8+charge*2.1;const goalTime=(-54.6-ball.z)/ball.vz;const predictedX=ball.x+ball.vx*goalTime;const keeperDecision=goalkeeperRL.beginShot({startX:ball.x,targetX:predictedX,power:charge});keeperPolicyTarget=keeperDecision.targetX;ball.inFlight=true;ball.shotTime=0;ball.pickupDelay=.72;ball.rotation=0;
-  player.yaw=Math.atan2(ball.vx,-ball.vz);setToast(charge>.72?'CÚ SÚT SẤM SÉT!':'DỨT ĐIỂM!');game.charge=0;
+  const charge=Math.min(1,game.charge/1.25),aimSign=input.x||Math.sign(dx)||1;let speed,vertical,gravity=17.5,curve=0;
+  if(game.shotMode===1){speed=19+charge*5;vertical=3.4+charge*1.2;gravity=16;curve=aimSign*(.58+charge*.18);}
+  else if(game.shotMode===2){speed=25+charge*3;gravity=6.4;}
+  else{speed=23+charge*9;vertical=4.8+charge*2.1;}
+  ball.vx=dx/len*speed;ball.vz=dz/len*speed;ball.gravity=gravity;ball.curve=curve;ball.power=charge;ball.goalResolved=false;
+  if(game.shotMode===2){const t=Math.max(.2,(-54.6-ball.z)/ball.vz);ball.vy=(3.05+charge*.35-ball.h+.5*gravity*t*t)/t;}else ball.vy=vertical;
+  const goalTime=(-54.6-ball.z)/ball.vz,predictedX=ball.x+ball.vx*goalTime+.5*ball.curve*goalTime*goalTime,keeperDecision=goalkeeperRL.beginShot({startX:ball.x,targetX:predictedX,power:charge});
+  keeperPolicyTarget=keeperDecision.targetX;keeperReactiveTarget=keeper.x;keeperReactionWait=.18+Math.random()*.12;keeperReadTimer=0;keeper.diveTime=0;keeper.diveSide=0;
+  ball.inFlight=true;ball.shotTime=0;ball.pickupDelay=.72;ball.rotation=0;
+  player.yaw=Math.atan2(ball.vx,-ball.vz);setToast(game.shotMode===1?'ĐẶT LÒNG XOÁY!':game.shotMode===2?'SÚT LỐP!':charge>.72?'CÚ SÚT SẤM SÉT!':'DỨT ĐIỂM!');game.charge=0;
 }
 function scoreGoal(){
   goalkeeperRL.resolveShot('goal');
   game.score++;updateScore();setToast('VÀOOOO! KHÁN ĐÀI BÙNG NỔ!');ball.inFlight=false;ball.vx=ball.vz=ball.vy=0;
   if(game.score>=3){showResult(true);return;}
-  Object.assign(player,{x:0,z:27,yaw:0});defenders.forEach((d,i)=>{d.x=[-10,11,-3][i];d.z=[-8,-18,8][i];});Object.assign(ball,{x:0,z:25.7,h:.59});keeper.x=0;keeperPolicyTarget=0;
+  Object.assign(player,{x:0,z:27,yaw:0,vx:0,vz:0});defenders.forEach((d,i)=>{d.x=[-10,11,-3][i];d.z=[-8,-18,8][i];});Object.assign(ball,{x:0,z:25.7,h:.59});keeper.x=0;keeperPolicyTarget=0;keeperReactiveTarget=0;
 }
 function updatePlayer(dt,input){
   let ix=input.x,iz=input.z,len=Math.hypot(ix,iz);if(len>1){ix/=len;iz/=len;}
-  const close=defenders.some(d=>Math.hypot(d.x-player.x,d.z-player.z)<1.65),speed=(input.sprint?13.2:9.25)*(close?.7:1);
-  player.x=Math.max(-31.2,Math.min(31.2,player.x+ix*speed*dt));player.z=Math.max(-48,Math.min(48,player.z+iz*speed*dt));
-  if(len>.04){player.yaw=Math.atan2(ix,-iz);}
-  player.moving=len>.06;player.step+=dt*(player.moving?(input.sprint?14:10):2.5);
+  const close=defenders.some(d=>Math.hypot(d.x-player.x,d.z-player.z)<1.5),speed=(input.sprint?13.2:9.25)*(close?.86:1),blend=1-Math.exp(-dt*(len>.04?15:20));
+  player.vx+=(ix*speed-player.vx)*blend;player.vz+=(iz*speed-player.vz)*blend;
+  player.x=Math.max(-31.2,Math.min(31.2,player.x+player.vx*dt));player.z=Math.max(-48,Math.min(48,player.z+player.vz*dt));
+  if(len>.04){const yaw=Math.atan2(ix,-iz),diff=(yaw-player.yaw+Math.PI*3)%(Math.PI*2)-Math.PI;player.yaw+=diff*Math.min(1,dt*17);}
+  player.moving=Math.hypot(player.vx,player.vz)>.55;player.step+=dt*(player.moving?(input.sprint?14:10):2.5);
 }
 function updateOpponents(dt){
   defenders.forEach((d,i)=>{
@@ -260,23 +270,47 @@ function updateOpponents(dt){
     d.x=Math.max(-30,Math.min(30,d.x));d.z=Math.max(-47,Math.min(47,d.z));if(l>.1)d.yaw=Math.atan2(dx,-dz);d.moving=l>3;d.step+=dt*(d.moving?9:2.5);
   });
 }
+function updateKeeper(dt){
+  if(ball.inFlight&&!ball.goalResolved&&ball.vz<-.1&&ball.z>-54.6){
+    keeperReactionWait=Math.max(0,keeperReactionWait-dt);
+    if(keeperReactionWait===0){keeperReadTimer-=dt;if(keeperReadTimer<=0){
+      const time=Math.max(0,Math.min(2.8,(-54.6-ball.z)/Math.max(2,-ball.vz))),uncertainty=.3+time*.17+Math.abs(ball.curve)*.2+(ball.power||0)*.12;
+      const observed=ball.x+ball.vx*time+.5*ball.curve*time*time+(Math.random()-.5)*2*uncertainty,previous=keeperReactiveTarget;
+      keeperReactiveTarget=Math.max(-6.9,Math.min(6.9,previous*.58+observed*.42));keeperReadTimer=.11;
+      if(ball.shotTime>.32&&Math.abs(keeperReactiveTarget-keeper.x)>.8){keeper.diveSide=Math.sign(keeperReactiveTarget-keeper.x);keeper.diveTime=.42;}
+    }}
+  }
+  const anticipating=ball.inFlight&&keeperReactionWait>0,target=anticipating?keeperPolicyTarget:keeperReactiveTarget,speed=anticipating?3.2:5.4;
+  keeper.x+=Math.max(-speed*dt,Math.min(speed*dt,target-keeper.x));keeper.diveTime=Math.max(0,keeper.diveTime-dt);keeper.step+=dt*4;
+}
+function resolveKeeperSave(){
+  const diving=keeper.diveTime>0&&Math.sign(ball.x-keeper.x)===keeper.diveSide,horizontalReach=diving?1.55:1.0,heightReach=diving?3.55:2.25;
+  const gapX=Math.max(0,Math.abs(ball.x-keeper.x)-horizontalReach),gapY=Math.max(0,ball.h-heightReach),missDistance=Math.hypot(gapX,gapY),saveChance=Math.max(.1,Math.min(.78,.76-missDistance*.46-(ball.h>2.6?.12:0)));
+  if(missDistance>.58||Math.random()>saveChance)return false;
+  goalkeeperRL.resolveShot('save');const side=Math.sign(ball.x-player.x)||Math.sign(ball.x-keeper.x)||1;
+  ball.x+=side*.34;ball.z=-53.4;ball.vx=side*(4.1+Math.abs(ball.vx)*.14);ball.vz=-Math.max(2.2,Math.abs(ball.vz)*.16);ball.vy=3.25;ball.gravity=13;ball.curve=0;ball.shotTime=0;ball.pickupDelay=.28;ball.goalResolved=true;setToast('THỦ MÔN CẢN PHÁ — BÓNG BẬT LỆCH!');return true;
+}
+function deflectFromDefender(){
+  if(ball.vz>=0||ball.shotTime<.12)return false;
+  for(let i=0;i<defenders.length;i++){const d=defenders[i];if(Math.hypot(ball.x-d.x,ball.z-d.z)<1.05&&ball.h<2.4){
+    goalkeeperRL.discardShot();const side=Math.sign(ball.x-d.x)||(i%2?1:-1);ball.vx=side*(4.8+Math.abs(ball.vx)*.12);ball.vz=Math.abs(ball.vz)*.3;ball.vy=3.4;ball.gravity=13;ball.curve=0;ball.x+=side*.38;ball.z+=.25;ball.shotTime=0;ball.pickupDelay=.12;ball.goalResolved=true;setToast('HẬU VỆ CHẠM BÓNG — CÚ SÚT ĐỔI HƯỚNG!');return true;
+  }}return false;
+}
 function updateBall(dt){
-  if(!ball.inFlight){const fx=Math.sin(player.yaw),fz=-Math.cos(player.yaw);ball.x=player.x+fx*.45;ball.z=player.z+fz*.45;ball.h=.59;ball.vx=ball.vz=ball.vy=0;}
+  if(!ball.inFlight){const fx=Math.sin(player.yaw),fz=-Math.cos(player.yaw),carry=.62+Math.min(.34,Math.hypot(player.vx,player.vz)*.035),targetX=player.x+fx*carry,targetZ=player.z+fz*carry,blend=1-Math.exp(-dt*14),oldX=ball.x,oldZ=ball.z;ball.x+=(targetX-ball.x)*blend;ball.z+=(targetZ-ball.z)*blend;ball.vx=(ball.x-oldX)/Math.max(dt,.001);ball.vz=(ball.z-oldZ)/Math.max(dt,.001);ball.h=.59;ball.vy=0;}
   else{
-    ball.shotTime+=dt;ball.pickupDelay=Math.max(0,ball.pickupDelay-dt);ball.x+=ball.vx*dt;ball.z+=ball.vz*dt;ball.h+=ball.vy*dt;ball.vy-=17.5*dt;
+    ball.shotTime+=dt;ball.pickupDelay=Math.max(0,ball.pickupDelay-dt);ball.vx+=ball.curve*dt;ball.x+=ball.vx*dt;ball.z+=ball.vz*dt;ball.h+=ball.vy*dt;ball.vy-=ball.gravity*dt;
     ball.vx*=Math.pow(.999,dt*60);ball.vz*=Math.pow(.999,dt*60);
     if(ball.h<.59){ball.h=.59;if(ball.vy< -1.7){ball.vy=-ball.vy*.32;ball.vx*=.82;ball.vz*=.82;}else ball.vy=0;}
-    if(ball.vz<0&&ball.z<=-54.6){
-      if(Math.abs(ball.x)<7.95&&ball.h<4){
-        if(Math.abs(ball.x-keeper.x)<1.35&&ball.h<3.25){goalkeeperRL.resolveShot('save');ball.vz=Math.abs(ball.vz)*.47;ball.vx+=(ball.x-keeper.x)*1.4;ball.vy=3.2;ball.z=-53.4;ball.inFlight=false;setToast('THỦ MÔN CẢN PHÁ!');}
-        else{scoreGoal();return;}
-      }else if(ball.z<-58.6){goalkeeperRL.discardShot();ball.inFlight=false;setToast('CÚ SÚT LỆCH KHUNG THÀNH');}
+    const touched=deflectFromDefender();
+    if(!touched&&ball.vz<0&&ball.z<=-54.6&&!ball.goalResolved){
+      if(Math.abs(ball.x)<7.95&&ball.h<4){if(!resolveKeeperSave()){scoreGoal();return;}}
+      else if(ball.z<-58.6){goalkeeperRL.discardShot();ball.inFlight=false;setToast('CÚ SÚT LỆCH KHUNG THÀNH');}
     }
     if(ball.inFlight&&(Math.abs(ball.x)>34||ball.z>56||ball.shotTime>5.2)){goalkeeperRL.discardShot();ball.inFlight=false;setToast('BÓNG RA NGOÀI — NHẬN LẠI BÓNG');}
-    if(ball.inFlight&&ball.pickupDelay===0&&Math.hypot(ball.x-player.x,ball.z-player.z)<1.85&&ball.h<1.2){goalkeeperRL.discardShot();ball.inFlight=false;setToast('GIỮ ĐƯỢC BÓNG — TIẾP TỤC!');}
+    if(ball.inFlight&&ball.pickupDelay===0&&Math.hypot(ball.x-player.x,ball.z-player.z)<1.85&&ball.h<1.2){goalkeeperRL.discardShot();ball.inFlight=false;ball.goalResolved=false;setToast('GIỮ ĐƯỢC BÓNG — TIẾP TỤC!');}
   }
-  ball.rotation+=dt*Math.hypot(ball.vx,ball.vz)*.08;
-  keeper.x+=Math.max(-3.2*dt,Math.min(3.2*dt,keeperPolicyTarget-keeper.x));keeper.step+=dt*4;
+  ball.rotation+=dt*Math.hypot(ball.vx,ball.vz)*.08;updateKeeper(dt);
 }
 function update(dt){
   if(game.toastTime>0){game.toastTime-=dt;hideToast();}
@@ -291,13 +325,13 @@ requestAnimationFrame(frame);
 
 mountLearningControls(()=>{keeperPolicyTarget=0;setToast('ĐÃ XÓA BỘ NHỚ HỌC CỦA THỦ MÔN');});
 
-$('start-button').addEventListener('click',beginMatch);$('restart-button').addEventListener('click',beginMatch);$('restart-pause-button').addEventListener('click',beginMatch);$('resume-button').addEventListener('click',resumeMatch);$('pause-button').addEventListener('click',togglePause);
+$('start-button').addEventListener('click',beginMatch);$('restart-button').addEventListener('click',beginMatch);$('restart-pause-button').addEventListener('click',beginMatch);$('resume-button').addEventListener('click',resumeMatch);$('pause-button').addEventListener('click',togglePause);$('shot-mode-button').addEventListener('click',cycleShotMode);
 for(const button of document.querySelectorAll('[data-key]')){
   const key=button.dataset.key;const down=e=>{e.preventDefault();virtual.add(key);button.classList.add('pressed');try{button.setPointerCapture(e.pointerId);}catch{}};const up=e=>{e.preventDefault();virtual.delete(key);button.classList.remove('pressed');};
   button.addEventListener('pointerdown',down);button.addEventListener('pointerup',up);button.addEventListener('pointercancel',up);button.addEventListener('lostpointercapture',up);
 }
 const sprint=$('sprint-button');sprint.addEventListener('pointerdown',e=>{e.preventDefault();virtual.add('Sprint');sprint.classList.add('pressed');try{sprint.setPointerCapture(e.pointerId);}catch{}});for(const ev of ['pointerup','pointercancel','lostpointercapture'])sprint.addEventListener(ev,()=>{virtual.delete('Sprint');sprint.classList.remove('pressed');});
 const shoot=$('shoot-button');shoot.addEventListener('pointerdown',e=>{e.preventDefault();if(game.active){shoot.classList.add('pressed');try{shoot.setPointerCapture(e.pointerId);}catch{}beginCharge();}});for(const ev of ['pointerup','pointercancel','lostpointercapture'])shoot.addEventListener(ev,e=>{e.preventDefault();shoot.classList.remove('pressed');fireShot();});
-window.addEventListener('keydown',e=>{if(e.code==='Escape'){e.preventDefault();togglePause();return;}const c=['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight','Space'];if(!c.includes(e.code)||!game.active)return;e.preventDefault();keys.add(e.code);if(e.code==='Space'&&!e.repeat)beginCharge();});
+window.addEventListener('keydown',e=>{if(e.code==='Escape'){e.preventDefault();togglePause();return;}if(e.code==='KeyQ'&&!e.repeat){e.preventDefault();cycleShotMode();return;}const c=['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight','Space'];if(!c.includes(e.code)||!game.active)return;e.preventDefault();keys.add(e.code);if(e.code==='Space'&&!e.repeat)beginCharge();});
 window.addEventListener('keyup',e=>{keys.delete(e.code);if(e.code==='Space'){e.preventDefault();fireShot();}});
 window.addEventListener('blur',()=>{keys.clear();virtual.clear();if(game.charging)fireShot();});document.addEventListener('visibilitychange',()=>{if(document.hidden&&game.active)pauseMatch();});

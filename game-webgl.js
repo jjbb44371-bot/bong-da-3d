@@ -240,9 +240,9 @@ function makePlayer({shirt,shorts,skin=materials.skin,keeper=false,scale=1,numbe
 const player=makePlayer({shirt:materials.blue,shorts:materials.shortsBlue,number:'7'});
 const defenders=[makePlayer({shirt:materials.red,shorts:materials.shortsRed,number:'4'}),makePlayer({shirt:materials.red,shorts:materials.shortsRed,number:'6'}),makePlayer({shirt:materials.red,shorts:materials.shortsRed,number:'8'})];
 const goalkeeper=makePlayer({shirt:materials.keeper,shorts:materials.black,scale:.87,number:'1'});
-const playerState={x:0,z:31,yaw:0,step:0,aimX:0};
+const playerState={x:0,z:31,yaw:0,step:0,aimX:0,vx:0,vz:0};
 const defenderStates=[{x:-10,z:-8,homeX:-10,homeZ:-8},{x:11,z:-18,homeX:11,homeZ:-18},{x:-3,z:8,homeX:-3,homeZ:8}];
-let keeperX=0,keeperStep=0,keeperPolicyTarget=0,keeperDiveTime=0,keeperDiveSide=0;
+let keeperX=0,keeperStep=0,keeperPolicyTarget=0,keeperReactiveTarget=0,keeperReactionWait=0,keeperReadTimer=0,keeperDiveTime=0,keeperDiveSide=0;
 
 const ballGroup=new THREE.Group();scene.add(ballGroup);
 const ballMesh=new THREE.Mesh(new THREE.SphereGeometry(.58,26,20),materials.ballWhite);ballMesh.castShadow=true;ballGroup.add(ballMesh);
@@ -254,9 +254,9 @@ for(let i=0;i<12;i++){
   const patch=new THREE.Mesh(patchGeo,materials.ballBlack);patch.position.copy(normal.clone().multiplyScalar(.586));patch.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),normal);ballGroup.add(patch);ballPatches.push(patch);
 }
 const ballShadow=new THREE.Mesh(new THREE.CircleGeometry(.72,18),new THREE.MeshBasicMaterial({color:0x030806,transparent:true,opacity:.36,depthWrite:false}));ballShadow.rotation.x=-Math.PI/2;ballShadow.position.y=.022;scene.add(ballShadow);
-const ball={x:0,z:29.7,h:.59,vx:0,vz:0,vy:0,inFlight:false,shotTime:0,pickupDelay:0};
+const ball={x:0,z:29.7,h:.59,vx:0,vz:0,vy:0,gravity:17.5,curve:0,power:0,inFlight:false,shotTime:0,pickupDelay:0,goalResolved:false};
 
-const game={active:false,paused:false,ended:false,score:0,time:90,charging:false,charge:0,toastTime:0,lastWholeSecond:90,lastToast:''};
+const game={active:false,paused:false,ended:false,score:0,time:90,charging:false,charge:0,shotMode:0,toastTime:0,lastWholeSecond:90,lastToast:''};
 const held=new Set(), virtual=new Set();
 let lastFrame=performance.now();
 
@@ -282,11 +282,11 @@ function showResult(won){
   $('restart-button').focus({preventScroll:true});
 }
 function resetPositions(){
-  playerState.x=0;playerState.z=31;playerState.yaw=0;playerState.step=0;playerState.aimX=0;
+  playerState.x=0;playerState.z=31;playerState.yaw=0;playerState.step=0;playerState.aimX=0;playerState.vx=0;playerState.vz=0;
   player.position.set(0,0,31);player.rotation.y=0;
   defenderStates.forEach((d,i)=>{const starts=[[-10,-8],[11,-18],[-3,8]][i];d.x=starts[0];d.z=starts[1];d.step=0;defenders[i].position.set(d.x,0,d.z);});
-  keeperX=0;keeperPolicyTarget=0;keeperDiveTime=0;goalkeeper.position.set(keeperX,0,-51.4);goalkeeper.rotation.z=0;goalkeeperRL.discardShot();
-  Object.assign(ball,{x:0,z:29.7,h:.59,vx:0,vz:0,vy:0,inFlight:false,shotTime:0,pickupDelay:0});
+  keeperX=0;keeperPolicyTarget=0;keeperReactiveTarget=0;keeperReactionWait=0;keeperReadTimer=0;keeperDiveTime=0;keeperDiveSide=0;goalkeeper.position.set(keeperX,0,-51.4);goalkeeper.rotation.z=0;goalkeeperRL.discardShot();
+  Object.assign(ball,{x:0,z:29.7,h:.59,vx:0,vz:0,vy:0,gravity:17.5,curve:0,power:0,inFlight:false,shotTime:0,pickupDelay:0,goalResolved:false});
   game.charging=false;game.charge=0;$('power-wrap').classList.remove('visible');
   held.clear();virtual.clear();
 }
@@ -308,6 +308,8 @@ function getInput(){
   const isDown=(...names)=>names.some(n=>held.has(n)||virtual.has(n));
   return {x:Number(isDown('KeyD','ArrowRight'))-Number(isDown('KeyA','ArrowLeft')),z:Number(isDown('KeyS','ArrowDown'))-Number(isDown('KeyW','ArrowUp')),sprint:isDown('ShiftLeft','ShiftRight','Sprint')};
 }
+const SHOT_MODES=[{name:'THƯỜNG',toast:'SÚT THƯỜNG: MẠNH VÀ THẲNG'},{name:'ĐẶT LÒNG',toast:'ĐẶT LÒNG: CHẬM HƠN, BÓNG XOÁY'},{name:'LỐP',toast:'SÚT LỐP: BÓNG BỔNG QUA TẦM VỚI'}];
+function cycleShotMode(){game.shotMode=(game.shotMode+1)%SHOT_MODES.length;const label=SHOT_MODES[game.shotMode].name;$('shot-mode-button').textContent=`KIỂU: ${label}`;$('shot-mode-button').setAttribute('aria-label',`Đổi kiểu sút — hiện tại: ${label}`);$('announcer').textContent=SHOT_MODES[game.shotMode].toast;}
 function beginCharge(){if(!game.active||game.paused||game.ended||game.charging)return;game.charging=true;game.charge=.05;$('power-wrap').classList.add('visible');}
 function fireShot(){
   if(!game.charging)return;
@@ -318,12 +320,17 @@ function fireShot(){
   const input=getInput();const aimed=input.x!==0;
   const targetX=aimed?input.x*6.4:(keeperX>=0?-6.15:6.15);
   const dx=targetX-ball.x,dz=-55.1-ball.z,length=Math.hypot(dx,dz)||1;
-  const charge=Math.min(1,game.charge/1.25),speed=23+charge*9;
-  ball.vx=dx/length*speed;ball.vz=dz/length*speed;ball.vy=4.8+charge*2.1;
-  const goalTime=(-54.6-ball.z)/ball.vz;const predictedX=ball.x+ball.vx*goalTime;const keeperDecision=goalkeeperRL.beginShot({startX:ball.x,targetX:predictedX,power:charge});keeperPolicyTarget=keeperDecision.targetX;keeperDiveSide=Math.sign(keeperPolicyTarget-keeperX);keeperDiveTime=.5;
+  const charge=Math.min(1,game.charge/1.25),aimSign=input.x||Math.sign(dx)||1;let speed,vertical,gravity=17.5,curve=0;
+  if(game.shotMode===1){speed=19+charge*5;vertical=3.4+charge*1.2;gravity=16;curve=aimSign*(.58+charge*.18);}
+  else if(game.shotMode===2){speed=25+charge*3;gravity=6.4;}
+  else{speed=23+charge*9;vertical=4.8+charge*2.1;}
+  ball.vx=dx/length*speed;ball.vz=dz/length*speed;ball.gravity=gravity;ball.curve=curve;ball.power=charge;ball.goalResolved=false;
+  if(game.shotMode===2){const t=Math.max(.2,(-54.6-ball.z)/ball.vz);ball.vy=(3.05+charge*.35-ball.h+.5*gravity*t*t)/t;}else ball.vy=vertical;
+  const goalTime=(-54.6-ball.z)/ball.vz,predictedX=ball.x+ball.vx*goalTime+.5*ball.curve*goalTime*goalTime,keeperDecision=goalkeeperRL.beginShot({startX:ball.x,targetX:predictedX,power:charge});
+  keeperPolicyTarget=keeperDecision.targetX;keeperReactiveTarget=keeperX;keeperReactionWait=.18+Math.random()*.12;keeperReadTimer=0;keeperDiveSide=0;keeperDiveTime=0;
   ball.inFlight=true;ball.shotTime=0;ball.pickupDelay=.72;
   playerState.yaw=Math.atan2(ball.vx,-ball.vz);player.rotation.y=playerState.yaw;
-  setToast(charge>.72?'CÚ SÚT SẤM SÉT!':'DỨT ĐIỂM!');
+  setToast(game.shotMode===1?'ĐẶT LÒNG XOÁY!':game.shotMode===2?'SÚT LỐP!':charge>.72?'CÚ SÚT SẤM SÉT!':'DỨT ĐIỂM!');
   game.charge=0;
 }
 function scoreGoal(){
@@ -331,23 +338,20 @@ function scoreGoal(){
   game.score++;updateScore();setToast('VÀOOOO! KHÁN ĐÀI BÙNG NỔ!');
   ball.inFlight=false;ball.vx=ball.vz=ball.vy=0;
   if(game.score>=3){showResult(true);return;}
-  playerState.x=0;playerState.z=27;playerState.yaw=0;player.position.set(0,0,27);
+  playerState.x=0;playerState.z=27;playerState.yaw=0;playerState.vx=0;playerState.vz=0;player.position.set(0,0,27);
   defenderStates.forEach((d,i)=>{d.x=[-10,11,-3][i];d.z=[-8,-18,8][i];defenders[i].position.set(d.x,0,d.z);});
-  Object.assign(ball,{x:0,z:25.7,h:.59});keeperX=0;keeperPolicyTarget=0;
+  Object.assign(ball,{x:0,z:25.7,h:.59});keeperX=0;keeperPolicyTarget=0;keeperReactiveTarget=0;
 }
 function updatePlayer(dt,input,time){
   let ix=input.x,iz=input.z;const len=Math.hypot(ix,iz);if(len>1){ix/=len;iz/=len;}
-  const speed=input.sprint?13.2:9.25;
-  const slowed=defenderStates.some(d=>Math.hypot(d.x-playerState.x,d.z-playerState.z)<1.65)?0.7:1;
-  playerState.x=THREE.MathUtils.clamp(playerState.x+ix*speed*slowed*dt,-31.2,31.2);
-  playerState.z=THREE.MathUtils.clamp(playerState.z+iz*speed*slowed*dt,-48,48);
-  if(len>.04){
-    const targetYaw=Math.atan2(ix,-iz);let diff=(targetYaw-playerState.yaw+Math.PI*3)%(Math.PI*2)-Math.PI;
-    playerState.yaw+=diff*Math.min(1,dt*10);playerState.aimX=ix;
-  }
+  const close=defenderStates.some(d=>Math.hypot(d.x-playerState.x,d.z-playerState.z)<1.5),speed=(input.sprint?13.2:9.25)*(close?.86:1),blend=1-Math.exp(-dt*(len>.04?15:20));
+  playerState.vx+=(ix*speed-playerState.vx)*blend;playerState.vz+=(iz*speed-playerState.vz)*blend;
+  playerState.x=THREE.MathUtils.clamp(playerState.x+playerState.vx*dt,-31.2,31.2);
+  playerState.z=THREE.MathUtils.clamp(playerState.z+playerState.vz*dt,-48,48);
+  if(len>.04){const targetYaw=Math.atan2(ix,-iz);let diff=(targetYaw-playerState.yaw+Math.PI*3)%(Math.PI*2)-Math.PI;playerState.yaw+=diff*Math.min(1,dt*17);playerState.aimX=ix;}
   player.position.set(playerState.x,0,playerState.z);player.rotation.y=playerState.yaw;
-  playerState.step+=(len>0.06?dt*(input.sprint?14:10):dt*2.5);
-  const swing=len>.06?Math.sin(playerState.step)*.63:0;
+  const moving=Math.hypot(playerState.vx,playerState.vz)>.55;playerState.step+=(moving?dt*(input.sprint?14:10):dt*2.5);
+  const swing=moving?Math.sin(playerState.step)*.63:0;
   player.userData.legs[0].rotation.x=swing;player.userData.legs[1].rotation.x=-swing;
   player.userData.legs[2].rotation.x=-swing*.8;player.userData.legs[3].rotation.x=swing*.8;
   player.userData.arms[0].rotation.x=-swing*.52;player.userData.arms[1].rotation.x=swing*.52;
@@ -366,29 +370,50 @@ function updateDefenders(dt){
     mesh.userData.arms.forEach((arm,j)=>arm.rotation.x=(j===0?-1:1)*s*.45);
   });
 }
+function updateKeeper(dt){
+  if(ball.inFlight&&!ball.goalResolved&&ball.vz<-.1&&ball.z>-54.6){
+    keeperReactionWait=Math.max(0,keeperReactionWait-dt);
+    if(keeperReactionWait===0){keeperReadTimer-=dt;if(keeperReadTimer<=0){
+      const time=THREE.MathUtils.clamp((-54.6-ball.z)/Math.max(2,-ball.vz),0,2.8),uncertainty=.3+time*.17+Math.abs(ball.curve)*.2+ball.power*.12;
+      const observed=ball.x+ball.vx*time+.5*ball.curve*time*time+(Math.random()-.5)*2*uncertainty,previous=keeperReactiveTarget;
+      keeperReactiveTarget=THREE.MathUtils.clamp(previous*.58+observed*.42,-6.9,6.9);keeperReadTimer=.11;
+      if(ball.shotTime>.32&&Math.abs(keeperReactiveTarget-keeperX)>.8){keeperDiveSide=Math.sign(keeperReactiveTarget-keeperX);keeperDiveTime=.42;}
+    }}
+  }
+  const anticipating=ball.inFlight&&keeperReactionWait>0,target=anticipating?keeperPolicyTarget:keeperReactiveTarget,speed=anticipating?3.2:5.4;
+  keeperX+=THREE.MathUtils.clamp(target-keeperX,-speed*dt,speed*dt);keeperDiveTime=Math.max(0,keeperDiveTime-dt);
+  goalkeeper.position.set(keeperX,0,-51.4);goalkeeper.rotation.y=0;goalkeeper.rotation.z=keeperDiveSide*.34*(keeperDiveTime/.42);keeperStep+=dt*5;
+  goalkeeper.userData.legs.forEach((leg,j)=>leg.rotation.x=(j%2?1:-1)*Math.sin(keeperStep)*.15);
+}
+function resolveKeeperSave(){
+  const diving=keeperDiveTime>0&&Math.sign(ball.x-keeperX)===keeperDiveSide,horizontalReach=diving?1.55:1.0,heightReach=diving?3.55:2.25;
+  const gapX=Math.max(0,Math.abs(ball.x-keeperX)-horizontalReach),gapY=Math.max(0,ball.h-heightReach),missDistance=Math.hypot(gapX,gapY),saveChance=Math.max(.1,Math.min(.78,.76-missDistance*.46-(ball.h>2.6?.12:0)));
+  if(missDistance>.58||Math.random()>saveChance)return false;
+  goalkeeperRL.resolveShot('save');const side=Math.sign(ball.x-playerState.x)||Math.sign(ball.x-keeperX)||1;
+  ball.x+=side*.34;ball.z=-53.4;ball.vx=side*(4.1+Math.abs(ball.vx)*.14);ball.vz=-Math.max(2.2,Math.abs(ball.vz)*.16);ball.vy=3.25;ball.gravity=13;ball.curve=0;ball.shotTime=0;ball.pickupDelay=.28;ball.goalResolved=true;setToast('THỦ MÔN CẢN PHÁ — BÓNG BẬT LỆCH!');return true;
+}
+function deflectFromDefender(){
+  if(ball.vz>=0||ball.shotTime<.12)return false;
+  for(let i=0;i<defenderStates.length;i++){const d=defenderStates[i];if(Math.hypot(ball.x-d.x,ball.z-d.z)<1.05&&ball.h<2.4){
+    goalkeeperRL.discardShot();const side=Math.sign(ball.x-d.x)||(i%2?1:-1);ball.vx=side*(4.8+Math.abs(ball.vx)*.12);ball.vz=Math.abs(ball.vz)*.3;ball.vy=3.4;ball.gravity=13;ball.curve=0;ball.x+=side*.38;ball.z+=.25;ball.shotTime=0;ball.pickupDelay=.12;ball.goalResolved=true;setToast('HẬU VỆ CHẠM BÓNG — CÚ SÚT ĐỔI HƯỚNG!');return true;
+  }}return false;
+}
 function updateBall(dt){
-  if(!ball.inFlight){
-    const forwardX=Math.sin(playerState.yaw),forwardZ=-Math.cos(playerState.yaw);
-    ball.x=playerState.x+forwardX*.45;ball.z=playerState.z+forwardZ*.45;ball.h=.59;ball.vx=ball.vz=ball.vy=0;
-  }else{
-    ball.shotTime+=dt;ball.pickupDelay=Math.max(0,ball.pickupDelay-dt);
-    ball.x+=ball.vx*dt;ball.z+=ball.vz*dt;ball.h+=ball.vy*dt;ball.vy-=17.5*dt;
+  if(!ball.inFlight){const forwardX=Math.sin(playerState.yaw),forwardZ=-Math.cos(playerState.yaw),carry=.62+Math.min(.34,Math.hypot(playerState.vx,playerState.vz)*.035),targetX=playerState.x+forwardX*carry,targetZ=playerState.z+forwardZ*carry,blend=1-Math.exp(-dt*14),oldX=ball.x,oldZ=ball.z;ball.x+=(targetX-ball.x)*blend;ball.z+=(targetZ-ball.z)*blend;ball.vx=(ball.x-oldX)/Math.max(dt,.001);ball.vz=(ball.z-oldZ)/Math.max(dt,.001);ball.h=.59;ball.vy=0;}
+  else{
+    ball.shotTime+=dt;ball.pickupDelay=Math.max(0,ball.pickupDelay-dt);ball.vx+=ball.curve*dt;ball.x+=ball.vx*dt;ball.z+=ball.vz*dt;ball.h+=ball.vy*dt;ball.vy-=ball.gravity*dt;
     if(ball.h<.59){ball.h=.59;if(ball.vy< -1.7){ball.vy=-ball.vy*.32;ball.vx*=.82;ball.vz*=.82;}else ball.vy=0;}
-    const flightToGoal=ball.vz<0&&ball.z<=-54.6;
-    if(flightToGoal){
-      if(Math.abs(ball.x)<7.95&&ball.h<4.0){
-        if(Math.abs(ball.x-keeperX)<1.35&&ball.h<3.25){goalkeeperRL.resolveShot('save');ball.vz= Math.abs(ball.vz)*.47;ball.vx+=(ball.x-keeperX)*1.4;ball.vy=3.2;ball.z=-53.4;ball.inFlight=false;setToast('THỦ MÔN CẢN PHÁ!');}
-        else {scoreGoal();return;}
-      }else if(ball.z<-58.6){goalkeeperRL.discardShot();ball.inFlight=false;setToast('CÚ SÚT LỆCH KHUNG THÀNH');}
+    const touched=deflectFromDefender();
+    if(!touched&&ball.vz<0&&ball.z<=-54.6&&!ball.goalResolved){
+      if(Math.abs(ball.x)<7.95&&ball.h<4.0){if(!resolveKeeperSave()){scoreGoal();return;}}
+      else if(ball.z<-58.6){goalkeeperRL.discardShot();ball.inFlight=false;setToast('CÚ SÚT LỆCH KHUNG THÀNH');}
     }
     if(ball.inFlight&&(Math.abs(ball.x)>34||ball.z>56||ball.shotTime>5.2)){goalkeeperRL.discardShot();ball.inFlight=false;setToast('BÓNG RA NGOÀI — NHẬN LẠI BÓNG');}
-    if(ball.inFlight&&ball.pickupDelay===0&&Math.hypot(ball.x-playerState.x,ball.z-playerState.z)<1.85&&ball.h<1.2){goalkeeperRL.discardShot();ball.inFlight=false;setToast('GIỮ ĐƯỢC BÓNG — TIẾP TỤC!');}
+    if(ball.inFlight&&ball.pickupDelay===0&&Math.hypot(ball.x-playerState.x,ball.z-playerState.z)<1.85&&ball.h<1.2){goalkeeperRL.discardShot();ball.inFlight=false;ball.goalResolved=false;setToast('GIỮ ĐƯỢC BÓNG — TIẾP TỤC!');}
   }
   ballGroup.position.set(ball.x,ball.h,ball.z);ballGroup.rotation.x+=dt*(ball.inFlight?ball.vz*-.12:0);ballGroup.rotation.z+=dt*(ball.inFlight?ball.vx*.12:0);
   const altitude=Math.max(0,ball.h-.58);ballShadow.position.set(ball.x,.023+altitude*.001,ball.z);const sh=1+Math.min(2,altitude*.18);ballShadow.scale.set(sh,sh,sh);ballShadow.material.opacity=Math.max(.08,.34-altitude*.045);
-  keeperX+=THREE.MathUtils.clamp(keeperPolicyTarget-keeperX,-3.2*dt,3.2*dt);
-  keeperDiveTime=Math.max(0,keeperDiveTime-dt);goalkeeper.position.set(keeperX,0,-51.4);goalkeeper.rotation.y=0;goalkeeper.rotation.z=keeperDiveSide*.34*(keeperDiveTime/.5);keeperStep+=dt*5;
-  goalkeeper.userData.legs.forEach((leg,j)=>leg.rotation.x=(j%2?1:-1)*Math.sin(keeperStep)*.15);
+  updateKeeper(dt);
 }
 function updateGame(dt){
   if(game.toastTime>0){game.toastTime-=dt;hideToast();}
@@ -417,13 +442,13 @@ function resize(){const width=world.clientWidth||window.innerWidth,height=world.
 window.addEventListener('resize',resize,{passive:true});resize();
 requestAnimationFrame((t)=>{lastFrame=t;animate(t);});
 
-mountLearningControls(()=>{keeperPolicyTarget=0;setToast('ĐÃ XÓA BỘ NHỚ HỌC CỦA THỦ MÔN');});
+mountLearningControls(()=>{keeperPolicyTarget=0;keeperReactiveTarget=0;setToast('ĐÃ XÓA BỘ NHỚ HỌC CỦA THỦ MÔN');});
 
 $('start-button').addEventListener('click',beginMatch);
 $('restart-button').addEventListener('click',beginMatch);
 $('restart-pause-button').addEventListener('click',beginMatch);
 $('resume-button').addEventListener('click',resumeMatch);
-$('pause-button').addEventListener('click',togglePause);
+$('pause-button').addEventListener('click',togglePause);$('shot-mode-button').addEventListener('click',cycleShotMode);
 for(const button of document.querySelectorAll('[data-key]')){
   const key=button.dataset.key;
   const down=(event)=>{event.preventDefault();virtual.add(key);button.classList.add('pressed');try{button.setPointerCapture(event.pointerId);}catch{}};
@@ -438,6 +463,7 @@ shootButton.addEventListener('pointerdown',(e)=>{e.preventDefault();if(game.acti
 for(const ev of ['pointerup','pointercancel','lostpointercapture'])shootButton.addEventListener(ev,(e)=>{e.preventDefault();shootButton.classList.remove('pressed');fireShot();});
 window.addEventListener('keydown',(e)=>{
   if(e.code==='Escape'){e.preventDefault();togglePause();return;}
+  if(e.code==='KeyQ'&&!e.repeat){e.preventDefault();cycleShotMode();return;}
   const control=['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','ShiftLeft','ShiftRight','Space'];
   if(!control.includes(e.code)||!game.active)return;
   e.preventDefault();held.add(e.code);
