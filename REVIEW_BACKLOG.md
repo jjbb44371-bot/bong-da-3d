@@ -13,7 +13,7 @@
 - Đo Canvas loop: trước sửa pause 524 callback/2s; sau sửa **0 callback trong 2s paused** sau khi toast hết, đồng hồ đứng; resume khởi động lại khoảng 234 callback/2s trong lần đo và restart tiếp tục.
 - Local browser console **0 errors**; một warning WebGL2 do Playwright báo `AllowWebgl2:false`. Chỉ chạy Canvas fallback runtime; WebGL đã syntax/unit/source-check, không khẳng định đã chạy runtime.
 - Nguồn chính thức EA FC 27 mô tả AI phản ứng với khoảng trống và tránh khu vực đông; algorithm không công bố. Heuristic né lane của game là thiết kế độc lập, không suy đoán thuật toán proprietary.
-- Không thêm analytics/tài khoản/thu thập dữ liệu/chi phí. Render dùng static `dist`; cả commit gameplay và bản sửa focus warning đều đã live, production smoke sau sửa không còn console warning/error.
+- Không thêm analytics/tài khoản/thu thập dữ liệu/chi phí. Render dùng static `dist`; cả commit gameplay và bản sửa focus warning đều đã live. Production không có JavaScript/focus warning; còn một warning WebGL2 từ giới hạn môi trường test.
 
 ## Backlog và kết quả
 
@@ -108,7 +108,7 @@
 - **Nguyên nhân:** `beginMatch()` đặt `aria-hidden=true` cho intro nhưng không di chuyển focus; lỗi có cùng trong Canvas và WebGL.
 - **Đã sửa:** thêm vùng `<main id="game-shell" tabindex="-1">` làm đích focus chương trình; cả hai `beginMatch()` chuyển focus sang vùng game sau khi ẩn overlay. Thêm regression test cho HTML và cả hai renderer, đồng bộ `dist`.
 - **Kiểm chứng local:** unit suite **14/14 pass**; `node --check`, source/dist byte parity và `git diff --check` đều đạt.
-- **Kiểm chứng production:** sau deploy `dep-db0dmsk9v7es73b05u1g`, vào trận 11v11 thành công, Q chuyển sang `ĐẶT LÒNG`, console có 0 warning/error; pause giữ clock `01:18` qua 1.7 giây, resume làm clock tiếp tục tới `01:16` qua 1.7 giây. WebGL runtime vẫn chưa kiểm tra được vì browser không cấp WebGL2.
+- **Kiểm chứng production:** sau deploy `dep-db0dmsk9v7es73b05u1g`, vào trận 11v11 thành công, Q chuyển sang `ĐẶT LÒNG`, không tái hiện focus/aria warning và có 0 JavaScript errors; còn một warning WebGL2 do browser không cấp WebGL2. Pause giữ clock `01:18` qua 1.7 giây, resume làm clock tiếp tục tới `01:16` qua 1.7 giây.
 
 ## Phạm vi đã kiểm tra / giới hạn bằng chứng
 
@@ -136,5 +136,5 @@
 - **Auto-deploy:** sau push follow-up không có deploy mới trong Render events; đã trigger đúng `srv-db07vefavr4c73ehdoqg`, giữ `clearCache=false`, không đụng service khác.
 - **Deploy/build:** deploy `dep-db0dmsk9v7es73b05u1g` live; build `bld-db0dmsk9v7es73b05u2g` succeeded. Events: `evt-db0dmtta1vls7393mru0` (`build_ended`) và `evt-db0dmtvr12us73994fag` (`deploy_ended`) succeeded; trigger ghi `clearCache=false`. Không rollback.
 - **Production HTTP/assets:** `/`, `index.html`, `game.js`, `game-canvas.js`, `game-webgl.js`, `match-ai.js`, `match-rules.js`, `style.css` trả HTTP `200`; 7 asset production đối chiếu khớp byte với `dist` của commit.
-- **Production browser smoke:** khởi động 11v11, Q đổi kiểu sút; focus warning biến mất, console không có warning/error; clock pause giữ nguyên `01:18` qua 1.7 giây, resume tiếp tục thành `01:16` qua 1.7 giây. Runtime thực tế dùng Canvas fallback; WebGL2 vẫn chưa được xác minh do giới hạn browser `AllowWebgl2:false`.
+- **Production browser smoke:** khởi động 11v11, Q đổi kiểu sút; focus warning biến mất, có 0 JavaScript errors và chỉ còn warning WebGL2 do môi trường; clock pause giữ nguyên `01:18` qua 1.7 giây, resume tiếp tục thành `01:16` qua 1.7 giây. Runtime thực tế dùng Canvas fallback; WebGL2 vẫn chưa được xác minh do giới hạn browser `AllowWebgl2:false`.
 - **Trạng thái hiện tại:** commit production chính xác là `25e19388e0b9f2c619e22cc5a1cd6c804722ad9f`; deploy live `dep-db0dmsk9v7es73b05u1g`; không còn issue focus chưa xử lý trong lượt này.
