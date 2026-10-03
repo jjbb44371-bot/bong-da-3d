@@ -454,7 +454,7 @@ function animate(now){
   desiredCamera.set(playerState.x*.83,camHeight,playerState.z+15.8);
   camera.position.lerp(desiredCamera,1-Math.exp(-dt*3.6));
   lookAt.set(playerState.x*.54,1.15,playerState.z-17.5);camera.lookAt(lookAt);
-  renderer.render(scene,camera);
+  if(game.active)renderer.render(scene,camera);
 }
 function resize(){const width=world.clientWidth||window.innerWidth,height=world.clientHeight||window.innerHeight;camera.aspect=width/height;camera.fov=width<650?61:55;camera.updateProjectionMatrix();renderer.setSize(width,height,false);}
 window.addEventListener('resize',resize,{passive:true});resize();
