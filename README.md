@@ -1,6 +1,8 @@
 # Bóng Đá 3D
 
-Game bóng đá arcade chạy bằng HTML, CSS và JavaScript thuần. `index.html` là entry point; `game.js` chọn nhánh WebGL 3D nếu trình duyệt hỗ trợ WebGL2, nếu không sẽ nạp Canvas 2D fallback. Three.js được vendored trong `vendor/`, không cần tải thư viện lúc chạy.
+Game bóng đá arcade 11v11 chạy bằng HTML, CSS và JavaScript thuần. Mỗi đội có 10 cầu thủ sân và 1 thủ môn; người chơi điều khiển cầu thủ số 11, đồng đội và đối thủ chạy chỗ theo vai trò/đội hình. `index.html` là entry point; `game.js` chọn nhánh WebGL 3D nếu trình duyệt hỗ trợ WebGL2, nếu không sẽ nạp Canvas 2D fallback. Three.js được vendored trong `vendor/`, không cần tải thư viện lúc chạy.
+
+Đây là thử thách ghi bàn arcade, không phải mô phỏng trọn vẹn: bạn điều khiển một cầu thủ, đồng đội tự hỗ trợ chạy chỗ và AI Đội Đỏ phòng ngự. Hiện chưa có nút chuyền bóng, chuyển quyền sở hữu hay pha tấn công/tính bàn cho Đội Đỏ. Chỉ thủ môn Đội Đỏ giữ Q-learning; cầu thủ sân dùng heuristic đội hình/di chuyển do dự án tự viết, còn thủ môn Đội Xanh bám vị trí theo hướng bóng.
 
 ## Chạy cục bộ
 
@@ -19,7 +21,11 @@ Mở `http://localhost:8000`. Thư mục `dist/` chứa bản static đã đồn
 - Giữ `Space` để lấy lực, thả để sút; trên điện thoại giữ nút **SÚT**.
 - `Q` hoặc nút **KIỂU** trên điện thoại đổi giữa sút thường (mạnh), đặt lòng (chậm hơn, có độ xoáy) và lốp (bổng, hạ thấp hơn gần khung thành).
 - `Esc` hoặc nút tạm dừng: tạm dừng/tiếp tục. Có thể đá lại từ đầu ở menu.
-- Ghi 3 bàn trong 90 giây để thắng.
+- Ghi 3 bàn trong 90 giây để thắng. Trận có 11 cầu thủ mỗi đội; một hậu vệ gây áp lực, người kế tiếp bọc lót, số còn lại giữ khối đội hình. Đồng đội chạy vào khoảng trống theo vai trò và hướng bóng.
+
+## Kiểm thử AI
+
+Chạy `node --test tests/match-ai.test.mjs` để kiểm tra số lượng roster, vị trí hai đội, hướng reset và chuyển động AI cơ bản.
 
 ## Thủ môn học cục bộ
 

@@ -1,4 +1,5 @@
 import { goalkeeperRL, mountLearningControls } from './goalkeeper-rl.js';
+import { createOutfieldRoster, resetOutfieldRoster, updateTeamAI, CONTROLLED_SLOT, PLAYERS_PER_TEAM, FIELD_PLAYERS_PER_TEAM } from './match-ai.js';
 
 const $ = (id) => document.getElementById(id);
 const world = $('world');
@@ -11,14 +12,18 @@ const colors={
   grass:'#246238',stripeA:'#2a6c3d',stripeB:'#205a32',line:'rgba(244,249,232,.86)',
   stand:'#122722',stand2:'#1a332c',stand3:'#243c33',roof:'#10201c',led:'#91dc61',
   crowd:['#d9e4dc','#6c9a7c','#e2a667','#567eaa','#9b6972','#d75450','#e6d954'],
-  blue:'#176bd0',shortBlue:'#103272',red:'#d44842',shortRed:'#761f2b',keeper:'#eee45d',
+  blue:'#176bd0',shortBlue:'#103272',red:'#d44842',shortRed:'#761f2b',keeper:'#eee45d',homeKeeper:'#64d8ad',
   skin:'#c99169',hair:'#201d19',boot:'#111714',ball:'#f5f4eb',ballSpot:'#18201c',
 };
 const field={minX:-34,maxX:34,minZ:-54,maxZ:54};
 const keys=new Set(),virtual=new Set();
-const player={x:0,z:31,yaw:0,step:0,vx:0,vz:0};
-const defenders=[{x:-10,z:-8,homeX:-10,homeZ:-8,step:0},{x:11,z:-18,homeX:11,homeZ:-18,step:0},{x:-3,z:8,homeX:-3,homeZ:8,step:0}];
+const homeRoster=createOutfieldRoster('home');
+const player=homeRoster[CONTROLLED_SLOT];Object.assign(player,{x:0,z:31,homeX:0,homeZ:31,yaw:0,step:0,vx:0,vz:0,moving:false});
+const teammateStates=homeRoster.filter((_,i)=>i!==CONTROLLED_SLOT);
+const defenders=createOutfieldRoster('away');
 const keeper={x:0,z:-51.4,step:0,diveTime:0,diveSide:0};
+const homeKeeper={x:0,z:51.4,step:0,diveTime:0,diveSide:0};
+window.__footballMatchInfo=Object.freeze({mode:'11v11',playersPerTeam:PLAYERS_PER_TEAM,homeOutfield:FIELD_PLAYERS_PER_TEAM,awayOutfield:FIELD_PLAYERS_PER_TEAM,totalPlayers:PLAYERS_PER_TEAM*2});
 let keeperPolicyTarget=0,keeperReactiveTarget=0,keeperReactionWait=0,keeperReadTimer=0;
 const ball={x:0,z:29.7,h:.59,vx:0,vz:0,vy:0,gravity:17.5,curve:0,inFlight:false,shotTime:0,pickupDelay:0,rotation:0};
 const game={active:false,paused:false,ended:false,score:0,time:90,charging:false,charge:0,shotMode:0,toastTime:0,lastWhole:90};
@@ -158,8 +163,9 @@ function drawFloodlights(){
   }
 }
 function drawHumanoid(entity,type,now){
-  const shirt=type==='player'?colors.blue:type==='keeper'?colors.keeper:colors.red;
-  const shorts=type==='player'?colors.shortBlue:colors.shortRed;
+  const blue=type==='player'||type==='teammate';
+  const shirt=blue?colors.blue:type==='keeper'?colors.keeper:type==='home-keeper'?colors.homeKeeper:colors.red;
+  const shorts=blue||type==='home-keeper'?colors.shortBlue:colors.shortRed;
   const z=entity.z,x=entity.x,phase=entity.step||now*2;
   const shadow=project(x,.035,z);if(!shadow)return;
   const s=shadow.scale;if(shadow.x<-80||shadow.x>width+80||shadow.y<-100||shadow.y>height+90)return;
@@ -198,7 +204,7 @@ function drawBall(){
 }
 function render(now){
   basis=cameraBasis();drawBackground();drawStadium();drawField();drawGoal(-54.6,-3.8);drawGoal(54.6,3.8);drawFloodlights();
-  const actors=[...defenders.map(d=>({entity:d,type:'defender'})),{entity:keeper,type:'keeper'},{entity:player,type:'player'}];
+  const actors=[...teammateStates.map(d=>({entity:d,type:'teammate'})),...defenders.map(d=>({entity:d,type:'defender'})),{entity:keeper,type:'keeper'},{entity:homeKeeper,type:'home-keeper'},{entity:player,type:'player'}];
   actors.sort((a,b)=>a.entity.z-b.entity.z);for(const a of actors)drawHumanoid(a.entity,a.type,now/1000);
   drawBall();
   const vg=ctx.createLinearGradient(0,0,0,height);vg.addColorStop(0,'rgba(0,0,0,.13)');vg.addColorStop(.5,'rgba(0,0,0,0)');vg.addColorStop(1,'rgba(0,0,0,.16)');ctx.fillStyle=vg;ctx.fillRect(0,0,width,height);
@@ -217,7 +223,9 @@ function showResult(won){
   $('match-state').textContent=won?'CHIẾN THẮNG':'TRẬN ĐẤU KẾT THÚC';$('announcer').textContent=won?'Bạn thắng! Ghi được ba bàn.':'Trận đấu kết thúc.';$('restart-button').focus({preventScroll:true});
 }
 function resetPositions(){
-  Object.assign(player,{x:0,z:31,yaw:0,step:0,vx:0,vz:0});defenders.forEach((d,i)=>{const a=[[-10,-8],[11,-18],[-3,8]][i];Object.assign(d,{x:a[0],z:a[1],step:0});});keeper.x=0;keeperPolicyTarget=0;keeperReactiveTarget=0;keeperReactionWait=0;keeperReadTimer=0;keeper.diveTime=0;goalkeeperRL.discardShot();
+  resetOutfieldRoster(homeRoster);resetOutfieldRoster(defenders);
+  Object.assign(player,{x:0,z:31,homeX:0,homeZ:31,yaw:0,step:0,vx:0,vz:0,moving:false});
+  keeper.x=0;homeKeeper.x=0;keeperPolicyTarget=0;keeperReactiveTarget=0;keeperReactionWait=0;keeperReadTimer=0;keeper.diveTime=0;keeper.diveSide=0;homeKeeper.diveTime=0;goalkeeperRL.discardShot();
   Object.assign(ball,{x:0,z:29.7,h:.59,vx:0,vz:0,vy:0,gravity:17.5,curve:0,inFlight:false,shotTime:0,pickupDelay:0,rotation:0,goalResolved:false});
   keys.clear();virtual.clear();game.charging=false;game.charge=0;$('power-wrap').classList.remove('visible');
 }
@@ -252,7 +260,7 @@ function scoreGoal(){
   goalkeeperRL.resolveShot('goal');
   game.score++;updateScore();setToast('VÀOOOO! KHÁN ĐÀI BÙNG NỔ!');ball.inFlight=false;ball.vx=ball.vz=ball.vy=0;
   if(game.score>=3){showResult(true);return;}
-  Object.assign(player,{x:0,z:27,yaw:0,vx:0,vz:0});defenders.forEach((d,i)=>{d.x=[-10,11,-3][i];d.z=[-8,-18,8][i];});Object.assign(ball,{x:0,z:25.7,h:.59});keeper.x=0;keeperPolicyTarget=0;keeperReactiveTarget=0;
+  resetPositions();Object.assign(player,{x:0,z:27,homeZ:27});Object.assign(ball,{x:0,z:25.7,h:.59});keeper.x=0;homeKeeper.x=0;keeperPolicyTarget=0;keeperReactiveTarget=0;
 }
 function updatePlayer(dt,input){
   let ix=input.x,iz=input.z,len=Math.hypot(ix,iz);if(len>1){ix/=len;iz/=len;}
@@ -262,13 +270,10 @@ function updatePlayer(dt,input){
   if(len>.04){const yaw=Math.atan2(ix,-iz),diff=(yaw-player.yaw+Math.PI*3)%(Math.PI*2)-Math.PI;player.yaw+=diff*Math.min(1,dt*17);}
   player.moving=Math.hypot(player.vx,player.vz)>.55;player.step+=dt*(player.moving?(input.sprint?14:10):2.5);
 }
-function updateOpponents(dt){
-  defenders.forEach((d,i)=>{
-    let tx=d.homeX,tz=d.homeZ;const distance=Math.hypot(player.x-d.x,player.z-d.z);
-    if(distance<24){tx=player.x+(i%2===0?-5.5:5.5);tz=player.z-7;}
-    const dx=tx-d.x,dz=tz-d.z,l=Math.hypot(dx,dz);if(l>5.3){const v=Math.min(3.5*dt,l-5.3);d.x+=dx/l*v;d.z+=dz/l*v;}
-    d.x=Math.max(-30,Math.min(30,d.x));d.z=Math.max(-47,Math.min(47,d.z));if(l>.1)d.yaw=Math.atan2(dx,-dz);d.moving=l>3;d.step+=dt*(d.moving?9:2.5);
-  });
+function updateTeamBrains(dt){
+  const focus=ball.inFlight?ball:player,carrier=focus,possession=ball.inFlight?'neutral':'home',now=performance.now()/1000;
+  updateTeamAI({roster:teammateStates,allies:homeRoster,opponents:defenders,ball:focus,carrier,possession,dt,now});
+  updateTeamAI({roster:defenders,allies:defenders,opponents:homeRoster,ball:focus,carrier,possession,dt,now});
 }
 function updateKeeper(dt){
   if(ball.inFlight&&!ball.goalResolved&&ball.vz<-.1&&ball.z>-54.6){
@@ -282,6 +287,10 @@ function updateKeeper(dt){
   }
   const anticipating=ball.inFlight&&keeperReactionWait>0,target=anticipating?keeperPolicyTarget:keeperReactiveTarget,speed=anticipating?3.2:5.4;
   keeper.x+=Math.max(-speed*dt,Math.min(speed*dt,target-keeper.x));keeper.diveTime=Math.max(0,keeper.diveTime-dt);keeper.step+=dt*4;
+}
+function updateHomeKeeper(dt){
+  let target=ball.x*.2;if(ball.inFlight&&ball.vz>0){const t=Math.max(0,Math.min(2.4,(54.6-ball.z)/Math.max(2,ball.vz)));target=ball.x+ball.vx*t;}else if(player.z>8)target=ball.x*.32;
+  target=Math.max(-7.05,Math.min(7.05,target));homeKeeper.x+=Math.max(-4.4*dt,Math.min(4.4*dt,target-homeKeeper.x));homeKeeper.z=51.4;homeKeeper.step+=dt*4.5;
 }
 function resolveKeeperSave(){
   const diving=keeper.diveTime>0&&Math.sign(ball.x-keeper.x)===keeper.diveSide,horizontalReach=diving?1.55:1.0,heightReach=diving?3.55:2.25;
@@ -310,12 +319,12 @@ function updateBall(dt){
     if(ball.inFlight&&(Math.abs(ball.x)>34||ball.z>56||ball.shotTime>5.2)){goalkeeperRL.discardShot();ball.inFlight=false;setToast('BÓNG RA NGOÀI — NHẬN LẠI BÓNG');}
     if(ball.inFlight&&ball.pickupDelay===0&&Math.hypot(ball.x-player.x,ball.z-player.z)<1.85&&ball.h<1.2){goalkeeperRL.discardShot();ball.inFlight=false;ball.goalResolved=false;setToast('GIỮ ĐƯỢC BÓNG — TIẾP TỤC!');}
   }
-  ball.rotation+=dt*Math.hypot(ball.vx,ball.vz)*.08;updateKeeper(dt);
+  ball.rotation+=dt*Math.hypot(ball.vx,ball.vz)*.08;updateKeeper(dt);updateHomeKeeper(dt);
 }
 function update(dt){
   if(game.toastTime>0){game.toastTime-=dt;hideToast();}
   if(game.charging){game.charge=Math.min(1.25,game.charge+dt);$('power-fill').style.width=`${Math.min(100,game.charge/1.25*100)}%`;}
-  const input=inputState();updatePlayer(dt,input);updateOpponents(dt);updateBall(dt);
+  const input=inputState();updatePlayer(dt,input);updateTeamBrains(dt);updateBall(dt);
   if(!game.active)return;game.time=Math.max(0,game.time-dt);const whole=Math.ceil(game.time);
   if(whole!==game.lastWhole){$('clock').textContent=timeText(game.time);game.lastWhole=whole;}
   if(game.time<=10&&whole>0)$('clock').classList.add('urgent');else $('clock').classList.remove('urgent');if(game.time<=0)showResult(false);

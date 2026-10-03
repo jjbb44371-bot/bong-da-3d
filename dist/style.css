@@ -13,3 +13,6 @@
 
 .shot-mode-button{display:none}
 @media(max-width:760px){.shot-mode-button{position:absolute;right:0;bottom:101px;display:block;max-width:min(190px,52vw);padding:8px 10px;border:1px solid rgba(218,255,156,.55);border-radius:16px;background:rgba(4,15,12,.8);color:#eaf5e6;font:800 8px/1 "DM Sans",sans-serif;letter-spacing:.1em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;backdrop-filter:blur(6px);pointer-events:auto;touch-action:manipulation}.shot-mode-button:active{background:rgba(197,250,88,.25);color:var(--lime)}.touch-aim-hint{right:0;bottom:142px;max-width:52vw;text-align:right;font-size:6px}}
+
+.match-format{display:inline-block;padding:4px 6px;border:1px solid rgba(197,250,88,.32);border-radius:3px;background:rgba(197,250,88,.09);color:var(--lime);font:900 8px "Barlow Condensed",sans-serif;letter-spacing:.1em;white-space:nowrap}
+@media(max-width:760px){.match-format{padding:3px 5px;font-size:7px}}

@@ -1,5 +1,6 @@
 import * as THREE from './vendor/three.module.js';
 import { goalkeeperRL, mountLearningControls } from './goalkeeper-rl.js';
+import { createOutfieldRoster, resetOutfieldRoster, updateTeamAI, CONTROLLED_SLOT, PLAYERS_PER_TEAM, FIELD_PLAYERS_PER_TEAM } from './match-ai.js';
 
 const $ = (id) => document.getElementById(id);
 const world = $('world');
@@ -41,7 +42,7 @@ const materials = {
   white: mat(0xf4f5ed, 0.46), gold: mat(0xf0c85c, 0.48), blue: mat(0x176ad1, 0.57), red: mat(0xd94843, 0.58),
   skin: mat(0xc99065, 0.75), shortsBlue: mat(0x102f72, 0.72), shortsRed: mat(0x701e27, 0.72), boots: mat(0x101715, 0.8),
   black: mat(0x111815, 0.55), ballWhite: mat(0xf4f4e9, 0.47), ballBlack: mat(0x13201d, 0.52),
-  keeper: mat(0xeee45d, 0.55), crowd0: mat(0xe0dfc7, 0.95), crowd1: mat(0x6c9a7c, 0.95), crowd2: mat(0xe2a667, 0.95), crowd3: mat(0x567eaa, 0.95), crowd4: mat(0x9b6972, 0.95),
+  keeper: mat(0xeee45d, 0.55), keeperHome: mat(0x64d8ad, 0.55), crowd0: mat(0xe0dfc7, 0.95), crowd1: mat(0x6c9a7c, 0.95), crowd2: mat(0xe2a667, 0.95), crowd3: mat(0x567eaa, 0.95), crowd4: mat(0x9b6972, 0.95),
   led: mat(0x9be56b,.4,{emissive:0x315e20,emissiveIntensity:.42}), trimBlue:mat(0x7ee4ff,.55,{emissive:0x12445a,emissiveIntensity:.3}), trimRed:mat(0xffb0a2,.62),
 };
 const hemi = new THREE.HemisphereLight(0xb9d8ea, 0x233820, 1.5);
@@ -237,12 +238,20 @@ function makePlayer({shirt,shorts,skin=materials.skin,keeper=false,scale=1,numbe
   for(const s of [-1,1]){const shoulder=new THREE.Mesh(new THREE.SphereGeometry(.22,12,9),shirtMat);shoulder.scale.set(1,.78,.9);shoulder.position.set(s*.4,1.79,0);root.add(shoulder);const shortTrim=new THREE.Mesh(new THREE.BoxGeometry(.05,.32,.03),trim);shortTrim.position.set(s*.3,.76,-.215);root.add(shortTrim);}
   root.userData={arms,legs,keeper};return root;
 }
-const player=makePlayer({shirt:materials.blue,shorts:materials.shortsBlue,number:'7'});
-const defenders=[makePlayer({shirt:materials.red,shorts:materials.shortsRed,number:'4'}),makePlayer({shirt:materials.red,shorts:materials.shortsRed,number:'6'}),makePlayer({shirt:materials.red,shorts:materials.shortsRed,number:'8'})];
+const player=makePlayer({shirt:materials.blue,shorts:materials.shortsBlue,number:'11'});
+const homeRoster=createOutfieldRoster('home');
+const playerState=homeRoster[CONTROLLED_SLOT];Object.assign(playerState,{x:0,z:31,homeX:0,homeZ:31,yaw:0,step:0,vx:0,vz:0});
+const teammateStates=homeRoster.filter((_,i)=>i!==CONTROLLED_SLOT);
+const teammates=teammateStates.map((state,i)=>makePlayer({shirt:materials.blue,shorts:materials.shortsBlue,number:String(i+2)}));
+const defenderStates=createOutfieldRoster('away');
+const defenders=defenderStates.map((state,i)=>makePlayer({shirt:materials.red,shorts:materials.shortsRed,number:String(i+2)}));
 const goalkeeper=makePlayer({shirt:materials.keeper,shorts:materials.black,scale:.87,number:'1'});
-const playerState={x:0,z:31,yaw:0,step:0,aimX:0,vx:0,vz:0};
-const defenderStates=[{x:-10,z:-8,homeX:-10,homeZ:-8},{x:11,z:-18,homeX:11,homeZ:-18},{x:-3,z:8,homeX:-3,homeZ:8}];
-let keeperX=0,keeperStep=0,keeperPolicyTarget=0,keeperReactiveTarget=0,keeperReactionWait=0,keeperReadTimer=0,keeperDiveTime=0,keeperDiveSide=0;
+const homeGoalkeeper=makePlayer({shirt:materials.keeperHome,shorts:materials.shortsBlue,scale:.87,number:'1'});
+player.position.set(playerState.x,0,playerState.z);
+teammates.forEach((mesh,i)=>{const s=teammateStates[i];mesh.position.set(s.x,0,s.z);mesh.rotation.y=s.yaw;});
+defenders.forEach((mesh,i)=>{const s=defenderStates[i];mesh.position.set(s.x,0,s.z);mesh.rotation.y=s.yaw;});
+goalkeeper.position.set(0,0,-51.4);homeGoalkeeper.position.set(0,0,51.4);
+let keeperX=0,keeperStep=0,homeKeeperX=0,homeKeeperStep=0,keeperPolicyTarget=0,keeperReactiveTarget=0,keeperReactionWait=0,keeperReadTimer=0,keeperDiveTime=0,keeperDiveSide=0;
 
 const ballGroup=new THREE.Group();scene.add(ballGroup);
 const ballMesh=new THREE.Mesh(new THREE.SphereGeometry(.58,26,20),materials.ballWhite);ballMesh.castShadow=true;ballGroup.add(ballMesh);
@@ -257,6 +266,7 @@ const ballShadow=new THREE.Mesh(new THREE.CircleGeometry(.72,18),new THREE.MeshB
 const ball={x:0,z:29.7,h:.59,vx:0,vz:0,vy:0,gravity:17.5,curve:0,power:0,inFlight:false,shotTime:0,pickupDelay:0,goalResolved:false};
 
 const game={active:false,paused:false,ended:false,score:0,time:90,charging:false,charge:0,shotMode:0,toastTime:0,lastWholeSecond:90,lastToast:''};
+window.__footballMatchInfo=Object.freeze({mode:'11v11',playersPerTeam:PLAYERS_PER_TEAM,homeOutfield:FIELD_PLAYERS_PER_TEAM,awayOutfield:FIELD_PLAYERS_PER_TEAM,totalPlayers:PLAYERS_PER_TEAM*2});
 const held=new Set(), virtual=new Set();
 let lastFrame=performance.now();
 
@@ -282,13 +292,15 @@ function showResult(won){
   $('restart-button').focus({preventScroll:true});
 }
 function resetPositions(){
-  playerState.x=0;playerState.z=31;playerState.yaw=0;playerState.step=0;playerState.aimX=0;playerState.vx=0;playerState.vz=0;
+  resetOutfieldRoster(homeRoster);resetOutfieldRoster(defenderStates);
+  Object.assign(playerState,{x:0,z:31,homeX:0,homeZ:31,yaw:0,step:0,aimX:0,vx:0,vz:0,moving:false});
   player.position.set(0,0,31);player.rotation.y=0;
-  defenderStates.forEach((d,i)=>{const starts=[[-10,-8],[11,-18],[-3,8]][i];d.x=starts[0];d.z=starts[1];d.step=0;defenders[i].position.set(d.x,0,d.z);});
-  keeperX=0;keeperPolicyTarget=0;keeperReactiveTarget=0;keeperReactionWait=0;keeperReadTimer=0;keeperDiveTime=0;keeperDiveSide=0;goalkeeper.position.set(keeperX,0,-51.4);goalkeeper.rotation.z=0;goalkeeperRL.discardShot();
+  teammateStates.forEach((s,i)=>{s.step=0;teammates[i].position.set(s.x,0,s.z);teammates[i].rotation.y=s.yaw;});
+  defenderStates.forEach((s,i)=>{s.step=0;defenders[i].position.set(s.x,0,s.z);defenders[i].rotation.y=s.yaw;});
+  keeperX=0;homeKeeperX=0;keeperPolicyTarget=0;keeperReactiveTarget=0;keeperReactionWait=0;keeperReadTimer=0;keeperDiveTime=0;keeperDiveSide=0;
+  goalkeeper.position.set(0,0,-51.4);goalkeeper.rotation.z=0;homeGoalkeeper.position.set(0,0,51.4);homeGoalkeeper.rotation.z=0;goalkeeperRL.discardShot();
   Object.assign(ball,{x:0,z:29.7,h:.59,vx:0,vz:0,vy:0,gravity:17.5,curve:0,power:0,inFlight:false,shotTime:0,pickupDelay:0,goalResolved:false});
-  game.charging=false;game.charge=0;$('power-wrap').classList.remove('visible');
-  held.clear();virtual.clear();
+  game.charging=false;game.charge=0;$('power-wrap').classList.remove('visible');held.clear();virtual.clear();
 }
 function beginMatch(){
   game.active=true;game.paused=false;game.ended=false;game.score=0;game.time=90;game.lastWholeSecond=90;game.toastTime=0;
@@ -338,9 +350,7 @@ function scoreGoal(){
   game.score++;updateScore();setToast('VÀOOOO! KHÁN ĐÀI BÙNG NỔ!');
   ball.inFlight=false;ball.vx=ball.vz=ball.vy=0;
   if(game.score>=3){showResult(true);return;}
-  playerState.x=0;playerState.z=27;playerState.yaw=0;playerState.vx=0;playerState.vz=0;player.position.set(0,0,27);
-  defenderStates.forEach((d,i)=>{d.x=[-10,11,-3][i];d.z=[-8,-18,8][i];defenders[i].position.set(d.x,0,d.z);});
-  Object.assign(ball,{x:0,z:25.7,h:.59});keeperX=0;keeperPolicyTarget=0;keeperReactiveTarget=0;
+  resetPositions();playerState.x=0;playerState.z=27;playerState.homeZ=27;player.position.set(0,0,27);Object.assign(ball,{x:0,z:25.7,h:.59});keeperX=0;homeKeeperX=0;keeperPolicyTarget=0;keeperReactiveTarget=0;
 }
 function updatePlayer(dt,input,time){
   let ix=input.x,iz=input.z;const len=Math.hypot(ix,iz);if(len>1){ix/=len;iz/=len;}
@@ -356,18 +366,18 @@ function updatePlayer(dt,input,time){
   player.userData.legs[2].rotation.x=-swing*.8;player.userData.legs[3].rotation.x=swing*.8;
   player.userData.arms[0].rotation.x=-swing*.52;player.userData.arms[1].rotation.x=swing*.52;
 }
-function updateDefenders(dt){
-  defenderStates.forEach((d,i)=>{
-    const mesh=defenders[i];let tx=d.homeX,tz=d.homeZ;
-    const dist=Math.hypot(playerState.x-d.x,playerState.z-d.z);
-    if(dist<24){tx=playerState.x+(i%2===0?-5.5:5.5);tz=playerState.z-7;}
-    const dx=tx-d.x,dz=tz-d.z,l=Math.hypot(dx,dz);
-    if(l>5.3){const v=Math.min(3.5*dt,l-5.3);d.x+=dx/l*v;d.z+=dz/l*v;}
-    d.x=THREE.MathUtils.clamp(d.x,-30,30);d.z=THREE.MathUtils.clamp(d.z,-47,47);
-    mesh.position.set(d.x,0,d.z);if(l>.1)mesh.rotation.y=Math.atan2(dx,-dz);
-    d.step+=dt*(l>3?9:2.5);const s=l>3?Math.sin(d.step)*.55:0;
-    mesh.userData.legs.forEach((leg,j)=>leg.rotation.x=(j%2===0?1:-1)*s);
-    mesh.userData.arms.forEach((arm,j)=>arm.rotation.x=(j===0?-1:1)*s*.45);
+function updateTeamBrains(dt){
+  const focus=ball.inFlight?ball:playerState,carrier=focus,possession=ball.inFlight?'neutral':'home',now=performance.now()/1000;
+  const homeAllies=homeRoster;
+  updateTeamAI({roster:teammateStates,allies:homeAllies,opponents:defenderStates,ball:focus,carrier,possession,dt,now});
+  updateTeamAI({roster:defenderStates,allies:defenderStates,opponents:homeAllies,ball:focus,carrier,possession,dt,now});
+  teammateStates.forEach((s,i)=>{
+    const mesh=teammates[i];mesh.position.set(s.x,0,s.z);mesh.rotation.y=s.yaw;
+    const swing=s.moving?Math.sin(s.step)*.48:0;mesh.userData.legs.forEach((leg,j)=>leg.rotation.x=(j%2?-1:1)*swing);mesh.userData.arms.forEach((arm,j)=>arm.rotation.x=(j===0?-1:1)*swing*.42);
+  });
+  defenderStates.forEach((s,i)=>{
+    const mesh=defenders[i];mesh.position.set(s.x,0,s.z);mesh.rotation.y=s.yaw;
+    const swing=s.moving?Math.sin(s.step)*.5:0;mesh.userData.legs.forEach((leg,j)=>leg.rotation.x=(j%2?-1:1)*swing);mesh.userData.arms.forEach((arm,j)=>arm.rotation.x=(j===0?-1:1)*swing*.42);
   });
 }
 function updateKeeper(dt){
@@ -384,6 +394,14 @@ function updateKeeper(dt){
   keeperX+=THREE.MathUtils.clamp(target-keeperX,-speed*dt,speed*dt);keeperDiveTime=Math.max(0,keeperDiveTime-dt);
   goalkeeper.position.set(keeperX,0,-51.4);goalkeeper.rotation.y=0;goalkeeper.rotation.z=keeperDiveSide*.34*(keeperDiveTime/.42);keeperStep+=dt*5;
   goalkeeper.userData.legs.forEach((leg,j)=>leg.rotation.x=(j%2?1:-1)*Math.sin(keeperStep)*.15);
+}
+function updateHomeKeeper(dt){
+  let target=ball.x*.2;
+  if(ball.inFlight&&ball.vz>0){const t=THREE.MathUtils.clamp((54.6-ball.z)/Math.max(2,ball.vz),0,2.4);target=ball.x+ball.vx*t;}
+  else if(playerState.z>8)target=ball.x*.32;
+  target=THREE.MathUtils.clamp(target,-7.05,7.05);homeKeeperX+=THREE.MathUtils.clamp(target-homeKeeperX,-4.4*dt,4.4*dt);
+  homeGoalkeeper.position.set(homeKeeperX,0,51.4);homeGoalkeeper.rotation.y=Math.PI;homeKeeperStep+=dt*4.5;
+  homeGoalkeeper.userData.legs.forEach((leg,j)=>leg.rotation.x=(j%2?1:-1)*Math.sin(homeKeeperStep)*.12);
 }
 function resolveKeeperSave(){
   const diving=keeperDiveTime>0&&Math.sign(ball.x-keeperX)===keeperDiveSide,horizontalReach=diving?1.55:1.0,heightReach=diving?3.55:2.25;
@@ -413,12 +431,12 @@ function updateBall(dt){
   }
   ballGroup.position.set(ball.x,ball.h,ball.z);ballGroup.rotation.x+=dt*(ball.inFlight?ball.vz*-.12:0);ballGroup.rotation.z+=dt*(ball.inFlight?ball.vx*.12:0);
   const altitude=Math.max(0,ball.h-.58);ballShadow.position.set(ball.x,.023+altitude*.001,ball.z);const sh=1+Math.min(2,altitude*.18);ballShadow.scale.set(sh,sh,sh);ballShadow.material.opacity=Math.max(.08,.34-altitude*.045);
-  updateKeeper(dt);
+  updateKeeper(dt);updateHomeKeeper(dt);
 }
 function updateGame(dt){
   if(game.toastTime>0){game.toastTime-=dt;hideToast();}
   if(game.charging){game.charge=Math.min(1.25,game.charge+dt);$('power-fill').style.width=`${Math.min(100,game.charge/1.25*100)}%`;}
-  const input=getInput();updatePlayer(dt,input,performance.now()/1000);updateDefenders(dt);updateBall(dt);
+  const input=getInput();updatePlayer(dt,input,performance.now()/1000);updateTeamBrains(dt);updateBall(dt);
   if(!game.active)return;
   game.time=Math.max(0,game.time-dt);const whole=Math.ceil(game.time);
   if(whole!==game.lastWholeSecond){$('clock').textContent=clockText(game.time);game.lastWholeSecond=whole;}
