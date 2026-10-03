@@ -1,9 +1,9 @@
 # Backlog rà soát Bóng Đá 3D 11v11
 
-**Cập nhật:** 2026-10-03 (Asia/Ho_Chi_Minh), release follow-up — phát hiện focus warning trên production, bản sửa qua 14/14 test và chờ deploy
+**Cập nhật:** 2026-10-03 (Asia/Ho_Chi_Minh), release follow-up đã live — focus warning được sửa và production verification đạt
 **Repo:** `jjbb44371-bot/bong-da-3d`, nhánh `main`
 **Production:** [bong-da-3d.onrender.com](https://bong-da-3d.onrender.com/) — Render static service `srv-db07vefavr4c73ehdoqg`, workspace `tea-datk3l8u01pc739fp4u0`
-**Tình trạng trước lượt:** commit `aa0eb3d8d16c85428ea542a214dbdff1631d27de` đã được push lên `main`; production được deploy `dep-db0dkhlg1s2s73dkgcj0` live sau trigger thủ công cho đúng service `bong-da-3d`, `clearCache=false`. Browser smoke phát hiện warning aria-hidden do focus còn trên nút intro; follow-up đã sửa cả hai renderer và hiện chờ phát hành.
+**Tình trạng sau lượt:** commit `25e19388e0b9f2c619e22cc5a1cd6c804722ad9f` đã được push lên `main` và đang live trên `bong-da-3d` qua deploy `dep-db0dmsk9v7es73b05u1g`; build/deploy thành công, `clearCache=false`.
 
 ## Tóm tắt audit
 
@@ -13,7 +13,7 @@
 - Đo Canvas loop: trước sửa pause 524 callback/2s; sau sửa **0 callback trong 2s paused** sau khi toast hết, đồng hồ đứng; resume khởi động lại khoảng 234 callback/2s trong lần đo và restart tiếp tục.
 - Local browser console **0 errors**; một warning WebGL2 do Playwright báo `AllowWebgl2:false`. Chỉ chạy Canvas fallback runtime; WebGL đã syntax/unit/source-check, không khẳng định đã chạy runtime.
 - Nguồn chính thức EA FC 27 mô tả AI phản ứng với khoảng trống và tránh khu vực đông; algorithm không công bố. Heuristic né lane của game là thiết kế độc lập, không suy đoán thuật toán proprietary.
-- Không thêm analytics/tài khoản/thu thập dữ liệu/chi phí. Render dùng static `dist`; commit gameplay đã live, bản sửa focus warning đang chờ production verification.
+- Không thêm analytics/tài khoản/thu thập dữ liệu/chi phí. Render dùng static `dist`; cả commit gameplay và bản sửa focus warning đều đã live, production smoke sau sửa không còn console warning/error.
 
 ## Backlog và kết quả
 
@@ -102,13 +102,13 @@
 
 ### R-20261003-11 — Focus còn trên nút intro sau khi vào trận
 
-- **Trạng thái:** `in_progress` — phát hiện trong production smoke; bản sửa đã qua local regression gate và đang chờ deploy/xác minh.
+- **Trạng thái:** `completed` — sửa ở cả hai renderer, deploy live và warning không còn tái hiện.
 - **Ưu tiên:** P2; confidence cao; effort thấp; rủi ro thấp.
 - **Bằng chứng:** sau khi bấm `VÀO SÂN` trên production, Chromium ghi warning `Blocked aria-hidden on an element because its descendant retained focus`; focused element là `#start-button`, ancestor bị ẩn là `section.overlay.intro`. Gameplay vẫn khởi động và clock chạy, nhưng focus của assistive technology không được chuyển khỏi overlay đã ẩn.
 - **Nguyên nhân:** `beginMatch()` đặt `aria-hidden=true` cho intro nhưng không di chuyển focus; lỗi có cùng trong Canvas và WebGL.
 - **Đã sửa:** thêm vùng `<main id="game-shell" tabindex="-1">` làm đích focus chương trình; cả hai `beginMatch()` chuyển focus sang vùng game sau khi ẩn overlay. Thêm regression test cho HTML và cả hai renderer, đồng bộ `dist`.
 - **Kiểm chứng local:** unit suite **14/14 pass**; `node --check`, source/dist byte parity và `git diff --check` đều đạt.
-- **Còn thiếu:** deploy follow-up lên đúng Render site `bong-da-3d`, xác nhận warning biến mất khi vào sân và kiểm tra lại pause/resume cùng asset production.
+- **Kiểm chứng production:** sau deploy `dep-db0dmsk9v7es73b05u1g`, vào trận 11v11 thành công, Q chuyển sang `ĐẶT LÒNG`, console có 0 warning/error; pause giữ clock `01:18` qua 1.7 giây, resume làm clock tiếp tục tới `01:16` qua 1.7 giây. WebGL runtime vẫn chưa kiểm tra được vì browser không cấp WebGL2.
 
 ## Phạm vi đã kiểm tra / giới hạn bằng chứng
 
@@ -128,3 +128,13 @@
 - **Production HTTP/assets:** HTTP `200`; `last-modified=2026-10-03 09:40:02 UTC`; `index.html`, `game-canvas.js`, `game-webgl.js` đều HTTP `200` và khớp byte với `dist` của commit.
 - **Production browser smoke:** 11v11/22 players; idle Canvas ops `0`; shot desktop `DỨT ĐIỂM!`; Q đổi mode; pause không đổi clock/draw count; resume render lại; restart trả `01:30` và score `0`; mobile touch shot `ĐẶT LÒNG XOÁY!`, pause/resume đạt.
 - **Transient HTTP:** một GET bị peer ngắt (curl 56) trong lúc kiểm tra; lần chẩn đoán kế tiếp qua HTTP/1.1 và các asset checks trả 200, byte khớp. Không còn lỗi production quan sát được.
+
+### Release follow-up — `25e1938` (focus/accessibility)
+
+- **Commit trước đó trong lượt:** `aa0eb3d8d16c85428ea542a214dbdff1631d27de` — `Improve gameplay fairness and idle efficiency`; deploy `dep-db0dkhlg1s2s73dkgcj0` live sau khi không có auto-deploy mới được ghi nhận; trigger API trên đúng service, `clearCache=false`.
+- **Production finding:** khi smoke test commit trên, thao tác `VÀO SÂN` phát ra Chromium warning vì `#start-button` giữ focus trong intro bị `aria-hidden`; đã sửa ngay trong follow-up `25e19388e0b9f2c619e22cc5a1cd6c804722ad9f` — `Move focus out of hidden intro overlay`.
+- **Auto-deploy:** sau push follow-up không có deploy mới trong Render events; đã trigger đúng `srv-db07vefavr4c73ehdoqg`, giữ `clearCache=false`, không đụng service khác.
+- **Deploy/build:** deploy `dep-db0dmsk9v7es73b05u1g` live; build `bld-db0dmsk9v7es73b05u2g` succeeded. Events: `evt-db0dmtta1vls7393mru0` (`build_ended`) và `evt-db0dmtvr12us73994fag` (`deploy_ended`) succeeded; trigger ghi `clearCache=false`. Không rollback.
+- **Production HTTP/assets:** `/`, `index.html`, `game.js`, `game-canvas.js`, `game-webgl.js`, `match-ai.js`, `match-rules.js`, `style.css` trả HTTP `200`; 7 asset production đối chiếu khớp byte với `dist` của commit.
+- **Production browser smoke:** khởi động 11v11, Q đổi kiểu sút; focus warning biến mất, console không có warning/error; clock pause giữ nguyên `01:18` qua 1.7 giây, resume tiếp tục thành `01:16` qua 1.7 giây. Runtime thực tế dùng Canvas fallback; WebGL2 vẫn chưa được xác minh do giới hạn browser `AllowWebgl2:false`.
+- **Trạng thái hiện tại:** commit production chính xác là `25e19388e0b9f2c619e22cc5a1cd6c804722ad9f`; deploy live `dep-db0dmsk9v7es73b05u1g`; không còn issue focus chưa xử lý trong lượt này.
