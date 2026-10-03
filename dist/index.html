@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#06120f">
+<meta name="description" content="Một thử thách bóng đá 3D dưới ánh đèn sân vận động. Rê bóng, đánh bại thủ môn và ghi 3 bàn trước khi hết giờ.">
+  <title>Bóng Đá 3D — Thử thách bóng đá</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="game-shell" aria-label="Game bóng đá 3D">
+    <div id="world" class="world" aria-label="Sân bóng 3D"></div>
+
+    <header class="topbar" aria-label="Bảng điểm">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">✦</span><span>BÓNG ĐÁ <b>3D</b><small>THỬ THÁCH BÓNG ĐÁ</small></span></div>
+      <div class="scoreboard" aria-label="Điểm số và thời gian">
+        <span class="team-tag team-home">BẠN</span>
+        <strong id="score">0</strong><span class="score-dash">:</span><strong class="away-score">0</strong>
+        <span class="team-tag team-away">THỦ MÔN</span>
+        <span class="score-divider"></span>
+        <span class="clock"><i aria-hidden="true"></i><time id="clock">01:30</time></span>
+      </div>
+      <button id="pause-button" class="icon-button" type="button" aria-label="Tạm dừng trận đấu" title="Tạm dừng (Esc)"><span>Ⅱ</span></button>
+    </header>
+
+    <div class="match-badge"><span class="live-dot"></span><span id="match-state">SÂN VẬN ĐỘNG ÁNH ĐÈN</span></div>
+    <div class="goal-count" aria-label="Mục tiêu trận đấu"><span class="goal-icon">⚽</span><span><b id="goals-left">3</b> BÀN ĐỂ THẮNG</span></div>
+    <aside class="learning-badge" id="keeper-learning" aria-label="Trí nhớ học của thủ môn">
+      <span class="learning-dot" aria-hidden="true"></span>
+      <span class="learning-meta"><strong>THỦ MÔN HỌC <b id="keeper-learning-count">0 CÚ HỌC</b></strong><small id="keeper-learning-detail">0/45 MẪU</small></span>
+      <button id="reset-learning" type="button" aria-label="Xóa bộ nhớ học cục bộ của thủ môn" title="Xóa dữ liệu học đã lưu trên thiết bị này">↺</button>
+    </aside>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <div class="power-wrap" id="power-wrap" aria-hidden="true"><span>LỰC SÚT</span><div class="power-track"><i id="power-fill"></i></div></div>
+
+    <div class="desktop-hint" id="desktop-hint"><span>W A S D</span> DI CHUYỂN <b>SHIFT</b> TĂNG TỐC <span>GIỮ SPACE</span> SÚT <span>A / D</span> NHẮM GÓC</div>
+
+    <div class="touch-controls" id="touch-controls" aria-label="Điều khiển cảm ứng">
+      <div class="touch-left">
+        <div class="dpad" aria-label="Di chuyển">
+          <button class="pad-up" type="button" data-key="ArrowUp" aria-label="Di chuyển lên">▲</button>
+          <button class="pad-left" type="button" data-key="ArrowLeft" aria-label="Di chuyển sang trái">◀</button>
+          <button class="pad-down" type="button" data-key="ArrowDown" aria-label="Di chuyển xuống">▼</button>
+          <button class="pad-right" type="button" data-key="ArrowRight" aria-label="Di chuyển sang phải">▶</button>
+        </div>
+        <button class="sprint-button" id="sprint-button" type="button" aria-label="Tăng tốc">TĂNG<br>TỐC</button>
+      </div>
+      <button class="shoot-button" id="shoot-button" type="button" aria-label="Nhấn giữ để sút"><span>⚽</span><b>SÚT</b></button>
+      <div class="touch-aim-hint">GIỮ NÚT SÚT<br>ĐỂ TĂNG LỰC</div>
+    </div>
+
+    <section class="overlay intro" id="intro" aria-labelledby="intro-title">
+      <div class="intro-card">
+        <div class="eyebrow"><span></span> BÓNG ĐÁ 3D · CHẾ ĐỘ ĐƠN</div>
+        <h1 id="intro-title">BÓNG ĐÁ<br><em>3D</em></h1>
+        <p class="intro-lead">Một cầu thủ. Một thủ môn. <strong>Ba bàn thắng.</strong></p>
+        <p class="intro-copy">Rê bóng băng qua sân, chọn góc sút và chinh phục khung thành dưới ánh đèn đêm. Thủ môn dần thích nghi với hướng, vị trí và lực sút lặp lại; dữ liệu học chỉ lưu trong trình duyệt này.</p>
+        <div class="intro-controls">
+          <div class="control-chip"><kbd>W A S D</kbd><span>DI CHUYỂN</span></div>
+          <div class="control-chip"><kbd>SHIFT</kbd><span>TĂNG TỐC</span></div>
+          <div class="control-chip"><kbd>GIỮ SPACE</kbd><span>LẤY LỰC &amp; SÚT</span></div>
+        </div>
+        <button id="start-button" class="primary-button" type="button"><span>VÀO SÂN</span><b aria-hidden="true">↗</b></button>
+        <div class="intro-foot"><span>90 GIÂY</span><i></i><span>GHI 3 BÀN ĐỂ THẮNG</span><i></i><span>ĐÁ LẠI BẤT CỨ LÚC NÀO</span></div>
+      </div>
+      <div class="photo-credit">NIGHT LIGHTS · MATCHDAY</div>
+    </section>
+
+    <section class="overlay modal-overlay hidden" id="pause-overlay" aria-labelledby="pause-title" aria-hidden="true">
+      <div class="modal-card">
+        <div class="eyebrow"><span></span> NGHỈ GIỮA TRẬN</div>
+        <h2 id="pause-title">TẠM<br><em>DỪNG</em></h2>
+        <p class="intro-copy">Sân cỏ vẫn chờ bạn trở lại.</p>
+        <button id="resume-button" class="primary-button" type="button"><span>TIẾP TỤC</span><b aria-hidden="true">↗</b></button>
+        <button id="restart-pause-button" class="secondary-button" type="button">CHƠI LẠI TỪ ĐẦU</button>
+      </div>
+    </section>
+
+    <section class="overlay modal-overlay hidden" id="result-overlay" aria-labelledby="result-title" aria-hidden="true">
+      <div class="modal-card result-card">
+        <div class="eyebrow" id="result-eyebrow"><span></span> HẾT GIỜ · ĐÊM CHUNG KẾT</div>
+        <h2 id="result-title">TRẬN<br><em>KẾT THÚC</em></h2>
+        <div class="final-score"><strong id="final-score">0</strong><span>—</span><strong>0</strong></div>
+        <p id="result-message" class="intro-copy">Mỗi cú sút là một cơ hội. Sẵn sàng cho lượt tiếp theo?</p>
+        <button id="restart-button" class="primary-button" type="button"><span>ĐÁ LẠI</span><b aria-hidden="true">↗</b></button>
+      </div>
+    </section>
+
+    <div class="live-announcer sr-only" id="announcer" aria-live="polite" aria-atomic="true"></div>
+    <noscript>Game này cần JavaScript để dựng sân vận động 3D và chạy trận đấu. Vui lòng bật JavaScript trong trình duyệt.</noscript>
+  </main>
+  <script type="module" src="game.js"></script>
+</body>
+</html>
