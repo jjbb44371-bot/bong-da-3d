@@ -82,15 +82,16 @@ function openLaneTarget(agent, base, opponents, allies) {
   return { x: bestX, z: base.z };
 }
 
-function chooseTarget(agent, index, roster, allies, opponents, ball, carrier, possession, now) {
+function chooseTarget(agent, roster, allies, opponents, ball, carrier, possession, now) {
   const attacking = possession === agent.team;
   const direction = agent.team === 'home' ? -1 : 1;
   const targetPoint = carrier || ball;
   const ranked = roster
     .map((candidate, candidateIndex) => ({ candidate, candidateIndex, distance: distance(candidate, targetPoint) }))
-    .sort((a, b) => a.distance - b.distance);
-  const pressIndex = ranked[0]?.candidateIndex ?? -1;
-  const coverIndex = ranked[1]?.candidateIndex ?? -1;
+    .sort((a, b) => a.distance - b.distance || String(a.candidate.id).localeCompare(String(b.candidate.id)));
+  const pressPlayer = ranked[0]?.candidate ?? null;
+  const coverPlayer = ranked[1]?.candidate ?? null;
+  const agentDistance = distance(agent, targetPoint);
 
   if (attacking && carrier && carrier !== agent) {
     let base;
@@ -113,9 +114,8 @@ function chooseTarget(agent, index, roster, allies, opponents, ball, carrier, po
     return lane;
   }
 
-  const closest = ranked.find((entry) => entry.candidateIndex === index);
   const pressRange = 15 + agent.engagement * 12;
-  if (!attacking && carrier && index === pressIndex && closest.distance < pressRange) {
+  if (!attacking && carrier && agent === pressPlayer && agentDistance < pressRange) {
     const predict = clamp(0.28 + agent.engagement * 0.25, 0.3, 0.58);
     const predicted = {
       x: carrier.x + (carrier.vx || 0) * predict,
@@ -124,7 +124,7 @@ function chooseTarget(agent, index, roster, allies, opponents, ball, carrier, po
     const offset = agent.lane < 0 ? -1.55 : 1.55;
     return { x: clamp(predicted.x + offset, -30, 30), z: clamp(predicted.z + (direction * 0.45), -48, 48) };
   }
-  if (!attacking && carrier && index === coverIndex && closest.distance < pressRange + 5) {
+  if (!attacking && carrier && agent === coverPlayer && agentDistance < pressRange + 5) {
     const goalSide = -direction;
     return {
       x: clamp(carrier.x + (agent.lane < 0 ? -4.2 : 4.2), -28, 28),
@@ -143,16 +143,27 @@ function chooseTarget(agent, index, roster, allies, opponents, ball, carrier, po
 
 export function updateTeamAI({ roster, allies = roster, opponents = [], ball, carrier = null, possession = null, dt, now = 0 }) {
   if (!Array.isArray(roster) || roster.length === 0) return;
-  for (let index = 0; index < roster.length; index += 1) {
-    const agent = roster[index];
-    const target = chooseTarget(agent, index, roster, allies, opponents, ball, carrier, possession, now);
-    let dx = target.x - agent.x;
-    let dz = target.z - agent.z;
+  const snapshots = new Map();
+  const snapshot = (player) => {
+    if (!player || typeof player !== 'object') return player;
+    if (!snapshots.has(player)) snapshots.set(player, { ...player });
+    return snapshots.get(player);
+  };
+  const readRoster = roster.map(snapshot);
+  const readAllies = allies.map(snapshot);
+  const readOpponents = opponents.map(snapshot);
+  const readBall = snapshot(ball);
+  const readCarrier = snapshot(carrier);
+  const nextStates = roster.map((agent, index) => {
+    const previous = readRoster[index];
+    const target = chooseTarget(previous, readRoster, readAllies, readOpponents, readBall, readCarrier, possession, now);
+    let dx = target.x - previous.x;
+    let dz = target.z - previous.z;
 
-    for (const teammate of allies) {
-      if (teammate === agent) continue;
-      const awayX = agent.x - teammate.x;
-      const awayZ = agent.z - teammate.z;
+    for (const teammate of readAllies) {
+      if (teammate === previous) continue;
+      const awayX = previous.x - teammate.x;
+      const awayZ = previous.z - teammate.z;
       const gap = Math.hypot(awayX, awayZ);
       if (gap > 0.04 && gap < 1.65) {
         const weight = (1.65 - gap) / 1.65;
@@ -166,23 +177,25 @@ export function updateTeamAI({ roster, allies = roster, opponents = [], ball, ca
       dx /= length;
       dz /= length;
     }
-    const speed = agent.pace * (possession === agent.team ? 0.96 : 1);
+    const speed = previous.pace * (possession === previous.team ? 0.96 : 1);
     const blend = 1 - Math.exp(-dt * 4.7);
-    agent.vx += (dx * speed - agent.vx) * blend;
-    agent.vz += (dz * speed - agent.vz) * blend;
+    let vx = previous.vx + (dx * speed - previous.vx) * blend;
+    let vz = previous.vz + (dz * speed - previous.vz) * blend;
     if (length < 0.42) {
       const settle = Math.exp(-dt * 5.3);
-      agent.vx *= settle;
-      agent.vz *= settle;
+      vx *= settle;
+      vz *= settle;
     }
-    agent.x = clamp(agent.x + agent.vx * dt, -30, 30);
-    agent.z = clamp(agent.z + agent.vz * dt, -47, 47);
-    agent.moving = Math.hypot(agent.vx, agent.vz) > 0.55;
-    if (agent.moving) {
-      const heading = Math.atan2(agent.vx, -agent.vz);
-      let delta = (heading - agent.yaw + Math.PI * 3) % (Math.PI * 2) - Math.PI;
-      agent.yaw += delta * Math.min(1, dt * 9);
+    const x = clamp(previous.x + vx * dt, -30, 30);
+    const z = clamp(previous.z + vz * dt, -47, 47);
+    const moving = Math.hypot(vx, vz) > 0.55;
+    let yaw = previous.yaw;
+    if (moving) {
+      const heading = Math.atan2(vx, -vz);
+      const delta = (heading - previous.yaw + Math.PI * 3) % (Math.PI * 2) - Math.PI;
+      yaw += delta * Math.min(1, dt * 9);
     }
-    agent.step += dt * (agent.moving ? 8.5 + agent.pace * 0.25 : 2.2);
-  }
+    return { agent, x, z, vx, vz, moving, yaw, step: previous.step + dt * (moving ? 8.5 + previous.pace * 0.25 : 2.2) };
+  });
+  for (const { agent, ...nextState } of nextStates) Object.assign(agent, nextState);
 }

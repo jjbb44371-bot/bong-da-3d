@@ -149,3 +149,40 @@ test('reset đưa AI về đúng hai nửa sân và xóa động lượng cũ', 
   assert.equal(away[0].vz, 0);
   assert.equal(away[0].yaw, Math.PI);
 });
+
+test('cùng trạng thái AI không phụ thuộc thứ tự roster hoặc thứ tự xử lý hai đội', () => {
+  function simulate(reverseRoster, reverseTeams) {
+    const home = createOutfieldRoster('home');
+    const away = createOutfieldRoster('away');
+    const controlled = home[CONTROLLED_SLOT];
+    controlled.x = 0;
+    controlled.z = 25;
+    controlled.vx = 0.3;
+    controlled.vz = -1;
+    const homeAI = home.filter((_, index) => index !== CONTROLLED_SLOT);
+    const homeOrder = reverseRoster ? [...homeAI].reverse() : homeAI;
+    const awayOrder = reverseRoster ? [...away].reverse() : away;
+    const ball = { x: controlled.x, z: controlled.z, vx: controlled.vx, vz: controlled.vz, h: 0.59, inFlight: false };
+
+    for (let frame = 0; frame < 600; frame += 1) {
+      const dt = 1 / 60;
+      const homeBefore = home.map((player) => ({ ...player }));
+      const awayBefore = away.map((player) => ({ ...player }));
+      const updateHome = () => updateTeamAI({ roster: homeOrder, allies: home, opponents: awayBefore, ball, carrier: controlled, possession: 'home', dt, now: frame * dt });
+      const updateAway = () => updateTeamAI({ roster: awayOrder, allies: away, opponents: homeBefore, ball, carrier: controlled, possession: 'home', dt, now: frame * dt });
+      if (reverseTeams) { updateAway(); updateHome(); }
+      else { updateHome(); updateAway(); }
+    }
+    return new Map([...homeAI, ...away].map((player) => [player.id, { x: player.x, z: player.z }]));
+  }
+
+  const baseline = simulate(false, false);
+  for (const [reverseRoster, reverseTeams] of [[true, false], [false, true], [true, true]]) {
+    const reordered = simulate(reverseRoster, reverseTeams);
+    for (const [id, position] of baseline) {
+      const result = reordered.get(id);
+      assert.ok(result, `${id} should exist in both simulations`);
+      assert.ok(Math.hypot(position.x - result.x, position.z - result.z) < 0.02, `${id} should not depend on roster/team update order`);
+    }
+  }
+});

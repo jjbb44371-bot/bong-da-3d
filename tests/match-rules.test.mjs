@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const rulesSource = await readFile(new URL('../match-rules.js', import.meta.url), 'utf8');
-const { applyBallFlightDamping, ballFitsGoalMouth, formatGoalAnnouncement, GOAL_MOUTH_CENTER_HALF_WIDTH, GOAL_MOUTH_CENTER_MAX_HEIGHT } = await import(`data:text/javascript;base64,${Buffer.from(rulesSource).toString('base64')}`);
+const { applyBallFlightDamping, ballFitsGoalMouth, formatGoalAnnouncement, goalPlaneCrossing, AWAY_GOAL_LINE_Z, AWAY_GOAL_SCORE_PLANE_Z, BALL_RADIUS, GOAL_MOUTH_CENTER_HALF_WIDTH, GOAL_MOUTH_CENTER_MAX_HEIGHT } = await import(`data:text/javascript;base64,${Buffer.from(rulesSource).toString('base64')}`);
 
 test('chỉ ghi bàn khi toàn bộ quả bóng lọt giữa cột và dưới xà', () => {
   assert.ok(ballFitsGoalMouth({ x: 0, h: 1 }));
@@ -28,6 +28,25 @@ test('thông báo ghi bàn nêu tỉ số và số bàn còn lại để thắng
   assert.equal(formatGoalAnnouncement(3), 'Bàn thắng! Tỉ số 3–0. Còn 0 bàn để thắng.');
 });
 
+test('goal mouth được xét tại thời điểm bóng cắt vạch, không xét endpoint của bước mô phỏng', () => {
+  assert.equal(AWAY_GOAL_SCORE_PLANE_Z, AWAY_GOAL_LINE_Z - BALL_RADIUS, 'tâm bóng phải đi quá vạch vật lý ít nhất một bán kính');
+  const endpointInside = { x: 7.564, z: -55.76, h: 0.59 };
+  const crossingOutside = goalPlaneCrossing({ x: 8.02, z: -54, h: 0.59 }, endpointInside, AWAY_GOAL_SCORE_PLANE_Z);
+  assert.ok(crossingOutside);
+  assert.ok(ballFitsGoalMouth(endpointInside), 'endpoint nằm trong ngưỡng khung thành');
+  assert.ok(!ballFitsGoalMouth(crossingOutside), 'tại vạch, bóng vẫn chạm cột nên không phải bàn');
+  assert.equal(crossingOutside.z, AWAY_GOAL_SCORE_PLANE_Z);
+
+  const endpointOutside = { x: 7.65, z: -55.8, h: 0.59 };
+  const crossingInside = goalPlaneCrossing({ x: 7, z: -54.4, h: 0.59 }, endpointOutside, AWAY_GOAL_SCORE_PLANE_Z);
+  assert.ok(crossingInside);
+  assert.ok(!ballFitsGoalMouth(endpointOutside), 'endpoint đã lệch khỏi khung');
+  assert.ok(ballFitsGoalMouth(crossingInside), 'bóng đã qua trọn vẹn khung tại mặt phẳng vượt vạch');
+  assert.equal(goalPlaneCrossing({ x: 0, z: AWAY_GOAL_SCORE_PLANE_Z + 0.1, h: 1 }, { x: 0, z: AWAY_GOAL_SCORE_PLANE_Z + 0.01, h: 1 }, AWAY_GOAL_SCORE_PLANE_Z), null, 'đoạn chưa vượt mặt phẳng ghi bàn không tạo crossing');
+  assert.equal(goalPlaneCrossing({ x: 0, z: AWAY_GOAL_SCORE_PLANE_Z + 0.1, h: 1 }, { x: 0, z: AWAY_GOAL_SCORE_PLANE_Z, h: 1 }, AWAY_GOAL_SCORE_PLANE_Z), null, 'bóng vừa chạm mặt phẳng nhưng chưa vượt hết thì chưa ghi bàn');
+  assert.ok(Math.abs(goalPlaneCrossing({ x: 0, z: AWAY_GOAL_SCORE_PLANE_Z, h: 1 }, { x: 0, z: AWAY_GOAL_SCORE_PLANE_Z - 0.01, h: 1 }, AWAY_GOAL_SCORE_PLANE_Z)?.fraction ?? 1) < 1e-12, 'bước kế tiếp ghi nhận bóng vừa đi qua mặt phẳng');
+});
+
 test('Canvas và WebGL cùng gọi luật cầu môn và damping dùng chung', async () => {
   const [canvas, webgl, html] = await Promise.all([
     readFile(new URL('../game-canvas.js', import.meta.url), 'utf8'),
@@ -35,7 +54,9 @@ test('Canvas và WebGL cùng gọi luật cầu môn và damping dùng chung', a
     readFile(new URL('../index.html', import.meta.url), 'utf8'),
   ]);
   for (const source of [canvas, webgl]) {
-    assert.match(source, /ballFitsGoalMouth\(ball\)/);
+    assert.match(source, /goalPlaneCrossing\(previousBall,\s*ball,\s*AWAY_GOAL_SCORE_PLANE_Z\)/);
+    assert.match(source, /ballFitsGoalMouth\(crossing\)/);
+    assert.match(source, /resolveKeeperSave\(crossing\)/);
     assert.match(source, /applyBallFlightDamping\(ball,\s*dt\)/);
     assert.match(source, /formatGoalAnnouncement\(game\.score\)/);
   }
