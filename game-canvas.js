@@ -246,6 +246,7 @@ function resetPositions(){
 function beginMatch(){
   game.active=true;game.paused=false;game.ended=false;game.score=0;game.time=90;game.lastWhole=90;game.toastTime=0;
   for(const id of ['intro','pause-overlay','result-overlay']){$(id).classList.add('hidden');$(id).setAttribute('aria-hidden','true');}
+  $('game-shell').focus({preventScroll:true});
   $('match-state').textContent='TRẬN ĐẤU ĐANG DIỄN RA';$('clock').textContent='01:30';$('clock').classList.remove('urgent');updateScore();resetPositions();setToast('TRẬN ĐẤU BẮT ĐẦU — LÊN BÓNG!');
 }
 function pauseMatch(){if(!game.active||game.ended)return;game.active=false;game.paused=true;cancelShotCharge();$('power-wrap').classList.remove('visible');$('pause-overlay').classList.remove('hidden');$('pause-overlay').setAttribute('aria-hidden','false');$('resume-button').focus({preventScroll:true});}

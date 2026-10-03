@@ -1,19 +1,19 @@
 # Backlog rà soát Bóng Đá 3D 11v11
 
-**Cập nhật:** 2026-10-03 (Asia/Ho_Chi_Minh), lượt audit tiếp theo — kiểm thử dist local xong, chờ phát hành
+**Cập nhật:** 2026-10-03 (Asia/Ho_Chi_Minh), release follow-up — phát hiện focus warning trên production, bản sửa qua 14/14 test và chờ deploy
 **Repo:** `jjbb44371-bot/bong-da-3d`, nhánh `main`
 **Production:** [bong-da-3d.onrender.com](https://bong-da-3d.onrender.com/) — Render static service `srv-db07vefavr4c73ehdoqg`, workspace `tea-datk3l8u01pc739fp4u0`
-**Tình trạng trước lượt:** repo ở `f0e1bea` (`Record production audit verification`); production đang chạy commit `512a1954f0dbf2f73af2a07259b110b9b78c5ba0`, deploy `dep-db0cqqc9v7es73ass900` live. Service được xác minh đúng repo, branch `main`, `autoDeploy=yes`, publish `dist`; không clear cache.
+**Tình trạng trước lượt:** commit `aa0eb3d8d16c85428ea542a214dbdff1631d27de` đã được push lên `main`; production được deploy `dep-db0dkhlg1s2s73dkgcj0` live sau trigger thủ công cho đúng service `bong-da-3d`, `clearCache=false`. Browser smoke phát hiện warning aria-hidden do focus còn trên nút intro; follow-up đã sửa cả hai renderer và hiện chờ phát hành.
 
 ## Tóm tắt audit
 
 - Runtime báo **11 người mỗi đội, 10 cầu thủ sân mỗi bên + 1 thủ môn, tổng 22**; kiểm tra trên Canvas 2D.
-- Unit suite hiện có **13/13 pass**, gồm AI 60 giây/đổi possession, chạy chỗ né lane đông, goal aperture, damping theo dt, accessible score announcement, RAF/input/layout contracts. Source và `dist` qua cú pháp và byte-parity.
+- Unit suite hiện có **14/14 pass**, gồm AI 60 giây/đổi possession, chạy chỗ né lane đông, goal aperture, damping theo dt, accessible score announcement, RAF/input/layout và focus contract cho cả hai renderer. Source và `dist` qua cú pháp và byte-parity.
 - Desktop đã thao tác WASD, Shift, Space, Q, Escape, resume, restart; mobile `390×844` và landscape thấp `667×360` thử D-pad/sprint/shoot/shot mode/pause/resume/restart, Enter/Space trên các touch controls, không tràn ngang và mọi nút nằm trong viewport.
 - Đo Canvas loop: trước sửa pause 524 callback/2s; sau sửa **0 callback trong 2s paused** sau khi toast hết, đồng hồ đứng; resume khởi động lại khoảng 234 callback/2s trong lần đo và restart tiếp tục.
 - Local browser console **0 errors**; một warning WebGL2 do Playwright báo `AllowWebgl2:false`. Chỉ chạy Canvas fallback runtime; WebGL đã syntax/unit/source-check, không khẳng định đã chạy runtime.
 - Nguồn chính thức EA FC 27 mô tả AI phản ứng với khoảng trống và tránh khu vực đông; algorithm không công bố. Heuristic né lane của game là thiết kế độc lập, không suy đoán thuật toán proprietary.
-- Không thêm analytics/tài khoản/thu thập dữ liệu/chi phí. Render dùng static `dist`; chưa phát hành lượt này.
+- Không thêm analytics/tài khoản/thu thập dữ liệu/chi phí. Render dùng static `dist`; commit gameplay đã live, bản sửa focus warning đang chờ production verification.
 
 ## Backlog và kết quả
 
@@ -99,6 +99,16 @@
 - **Bằng chứng trước sửa:** khi pause Canvas, browser ghi 524 callback/2s dù clock/scene không đổi.
 - **Đã sửa:** scheduler chỉ lập frame kế tiếp khi trận đang chạy hoặc toast cần hết thời gian; resume/restart khởi động lại; renderer/camera chỉ cập nhật lúc active. Không thay đổi simulation timestep hay logic 11v11.
 - **Kiểm chứng:** local Canvas có 0 callback mới trong 2s pause sau khi toast hết; khoảng 234/2s khi active, resume làm clock tiếp tục, restart hoạt động. WebGL chỉ qua syntax/static tests do môi trường không cấp WebGL2.
+
+### R-20261003-11 — Focus còn trên nút intro sau khi vào trận
+
+- **Trạng thái:** `in_progress` — phát hiện trong production smoke; bản sửa đã qua local regression gate và đang chờ deploy/xác minh.
+- **Ưu tiên:** P2; confidence cao; effort thấp; rủi ro thấp.
+- **Bằng chứng:** sau khi bấm `VÀO SÂN` trên production, Chromium ghi warning `Blocked aria-hidden on an element because its descendant retained focus`; focused element là `#start-button`, ancestor bị ẩn là `section.overlay.intro`. Gameplay vẫn khởi động và clock chạy, nhưng focus của assistive technology không được chuyển khỏi overlay đã ẩn.
+- **Nguyên nhân:** `beginMatch()` đặt `aria-hidden=true` cho intro nhưng không di chuyển focus; lỗi có cùng trong Canvas và WebGL.
+- **Đã sửa:** thêm vùng `<main id="game-shell" tabindex="-1">` làm đích focus chương trình; cả hai `beginMatch()` chuyển focus sang vùng game sau khi ẩn overlay. Thêm regression test cho HTML và cả hai renderer, đồng bộ `dist`.
+- **Kiểm chứng local:** unit suite **14/14 pass**; `node --check`, source/dist byte parity và `git diff --check` đều đạt.
+- **Còn thiếu:** deploy follow-up lên đúng Render site `bong-da-3d`, xác nhận warning biến mất khi vào sân và kiểm tra lại pause/resume cùng asset production.
 
 ## Phạm vi đã kiểm tra / giới hạn bằng chứng
 

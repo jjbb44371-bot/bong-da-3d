@@ -307,6 +307,7 @@ function beginMatch(){
   game.active=true;game.paused=false;game.ended=false;game.score=0;game.time=90;game.lastWholeSecond=90;game.toastTime=0;
   $('intro').classList.add('hidden');$('pause-overlay').classList.add('hidden');$('result-overlay').classList.add('hidden');
   for(const id of ['intro','pause-overlay','result-overlay'])$(id).setAttribute('aria-hidden','true');
+  $('game-shell').focus({preventScroll:true});
   $('match-state').textContent='TRẬN ĐẤU ĐANG DIỄN RA';$('clock').textContent='01:30';
   updateScore();resetPositions();setToast('TRẬN ĐẤU BẮT ĐẦU — LÊN BÓNG!');
 }

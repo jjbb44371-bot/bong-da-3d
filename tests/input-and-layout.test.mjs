@@ -2,10 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const [canvas, webgl, css] = await Promise.all([
+const [canvas, webgl, css, html] = await Promise.all([
   readFile(new URL('../game-canvas.js', import.meta.url), 'utf8'),
   readFile(new URL('../game-webgl.js', import.meta.url), 'utf8'),
   readFile(new URL('../style.css', import.meta.url), 'utf8'),
+  readFile(new URL('../index.html', import.meta.url), 'utf8'),
 ]);
 
 test('Canvas và WebGL chỉ sút khi nhả, còn cancel/lost capture/blur thì hủy charge', () => {
@@ -30,4 +31,11 @@ test('vòng RAF không tự lặp liên tục khi không chơi và hết toast',
   assert.match(canvas, /if\(game\.active\|\|game\.toastTime>0\)scheduleFrame\(\)/);
   assert.match(webgl, /function scheduleFrame\(\)\{if\(frameScheduled\)return;frameScheduled=true;requestAnimationFrame\(animate\);\}/);
   assert.match(webgl, /if\(game\.active\|\|\(!game\.paused&&!game\.ended&&game\.toastTime>0\)\)scheduleFrame\(\)/);
+});
+
+test('khi bắt đầu trận, focus rời intro bị ẩn và chuyển tới vùng game', () => {
+  assert.match(html, /<main id="game-shell" class="game-shell" tabindex="-1"/);
+  for (const source of [canvas, webgl]) {
+    assert.match(source, /function beginMatch\(\)\{[\s\S]*?\$\('game-shell'\)\.focus\(\{preventScroll:true\}\);/);
+  }
 });
