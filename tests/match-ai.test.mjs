@@ -52,6 +52,41 @@ test('đồng đội chiếm khoảng trống, đối thủ gây áp lực có c
   assert.ok(away.every((p) => Number.isFinite(p.x) && Number.isFinite(p.z) && Math.abs(p.x) <= 30 && Math.abs(p.z) <= 47));
 });
 
+test('người chạy chỗ chọn lane khác khi điểm hỗ trợ gần đó đã bị đồng đội chiếm', () => {
+  function firstStepWithCrowding(crowded) {
+    const home = createOutfieldRoster('home');
+    const away = createOutfieldRoster('away');
+    const controlled = home[CONTROLLED_SLOT];
+    controlled.x = 0;
+    controlled.z = -25;
+    if (crowded) {
+      home[1].x = -17;
+      home[1].z = -28;
+      home[2].x = -17;
+      home[2].z = -28;
+    }
+
+    const runner = home[0];
+    const initial = { x: runner.x, z: runner.z };
+    updateTeamAI({
+      roster: [runner],
+      allies: home,
+      opponents: away,
+      ball: { x: controlled.x, z: controlled.z },
+      carrier: controlled,
+      possession: 'home',
+      dt: 1 / 60,
+      now: 0,
+    });
+    return { x: runner.x - initial.x, z: runner.z - initial.z };
+  }
+
+  const openLane = firstStepWithCrowding(false);
+  const crowdedLane = firstStepWithCrowding(true);
+  assert.ok(Math.abs(openLane.x / openLane.z) > 1, 'the open support point should remain near its preferred central lane');
+  assert.ok(Math.abs(crowdedLane.x / crowdedLane.z) < 0.7, 'the runner should shift laterally away from the occupied support point');
+});
+
 test('đội hình 10 cầu thủ sân của hai đội đối xứng đúng vai trò và hai nửa sân', () => {
   const home = createOutfieldRoster('home');
   const away = createOutfieldRoster('away');

@@ -56,16 +56,24 @@ export function resetOutfieldRoster(roster) {
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const distance = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 
-function openLaneTarget(agent, base, opponents) {
+function openLaneTarget(agent, base, opponents, allies) {
   const candidates = [-9, -5, 0, 5, 9].map((offset) => clamp(base.x + offset, -27, 27));
   let bestX = candidates[0];
   let bestScore = -Infinity;
   for (const x of candidates) {
-    const closest = opponents.length
-      ? Math.min(...opponents.map((opponent) => Math.hypot(opponent.x - x, opponent.z - base.z)))
-      : 12;
+    let closestOpponent = 12;
+    for (const opponent of opponents) {
+      closestOpponent = Math.min(closestOpponent, Math.hypot(opponent.x - x, opponent.z - base.z));
+    }
+    let teammateCrowding = 0;
+    for (const teammate of allies) {
+      if (teammate === agent) continue;
+      const gap = Math.hypot(teammate.x - x, teammate.z - base.z);
+      teammateCrowding += Math.max(0, 4.5 - gap);
+    }
     const travel = Math.hypot(x - agent.x, base.z - agent.z);
-    const score = Math.min(closest, 12) * 0.72 - travel * 0.16 - Math.abs(x - base.x) * 0.12;
+    // Prefer support points that are not already occupied by our own runners.
+    const score = closestOpponent * 0.72 - travel * 0.16 - Math.abs(x - base.x) * 0.12 - Math.min(teammateCrowding, 7) * 0.65;
     if (score > bestScore) {
       bestScore = score;
       bestX = x;
@@ -100,7 +108,7 @@ function chooseTarget(agent, index, roster, allies, opponents, ball, carrier, po
     } else {
       base = { x: carrier.x + agent.homeX * 0.42, z: carrier.z + direction * 11 };
     }
-    const lane = openLaneTarget(agent, base, opponents);
+    const lane = openLaneTarget(agent, base, opponents, allies);
     lane.x = clamp(lane.x + Math.sin(now * 0.78 + agent.lane * 2.4) * 0.9, -29, 29);
     return lane;
   }

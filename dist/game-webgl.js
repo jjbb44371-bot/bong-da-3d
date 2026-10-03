@@ -1,6 +1,7 @@
 import * as THREE from './vendor/three.module.js';
 import { goalkeeperRL, mountLearningControls } from './goalkeeper-rl.js';
 import { createOutfieldRoster, resetOutfieldRoster, updateTeamAI, CONTROLLED_SLOT, PLAYERS_PER_TEAM, FIELD_PLAYERS_PER_TEAM } from './match-ai.js';
+import { applyBallFlightDamping, ballFitsGoalMouth, formatGoalAnnouncement } from './match-rules.js';
 
 const $ = (id) => document.getElementById(id);
 const world = $('world');
@@ -268,9 +269,9 @@ const ball={x:0,z:29.7,h:.59,vx:0,vz:0,vy:0,gravity:17.5,curve:0,power:0,inFligh
 const game={active:false,paused:false,ended:false,score:0,time:90,charging:false,charge:0,shotMode:0,toastTime:0,lastWholeSecond:90,lastToast:''};
 window.__footballMatchInfo=Object.freeze({mode:'11v11',playersPerTeam:PLAYERS_PER_TEAM,homeOutfield:FIELD_PLAYERS_PER_TEAM,awayOutfield:FIELD_PLAYERS_PER_TEAM,totalPlayers:PLAYERS_PER_TEAM*2});
 const held=new Set(), virtual=new Set();
-let lastFrame=performance.now();
+let lastFrame=performance.now(),frameScheduled=false;
 
-function setToast(text){game.lastToast=text;game.toastTime=1.65;$('toast').textContent=text;$('toast').classList.add('visible');$('announcer').textContent=text;}
+function setToast(text){game.lastToast=text;game.toastTime=1.65;$('toast').textContent=text;$('toast').classList.add('visible');$('announcer').textContent=text;scheduleFrame();}
 function hideToast(){if(game.toastTime<=0)$('toast').classList.remove('visible');}
 function updateScore(){
   $('score').textContent=String(game.score);
@@ -311,10 +312,10 @@ function beginMatch(){
 }
 function pauseMatch(){
   if(!game.active||game.ended)return;
-  game.active=false;game.paused=true;game.charging=false;$('power-wrap').classList.remove('visible');
+  game.active=false;game.paused=true;cancelShotCharge();$('power-wrap').classList.remove('visible');
   $('pause-overlay').classList.remove('hidden');$('pause-overlay').setAttribute('aria-hidden','false');$('resume-button').focus({preventScroll:true});
 }
-function resumeMatch(){if(!game.paused)return;game.paused=false;game.active=true;$('pause-overlay').classList.add('hidden');$('pause-overlay').setAttribute('aria-hidden','true');$('pause-button').focus({preventScroll:true});lastFrame=performance.now();}
+function resumeMatch(){if(!game.paused)return;game.paused=false;game.active=true;$('pause-overlay').classList.add('hidden');$('pause-overlay').setAttribute('aria-hidden','true');$('pause-button').focus({preventScroll:true});lastFrame=performance.now();scheduleFrame();}
 function togglePause(){if(game.active)pauseMatch();else if(game.paused)resumeMatch();}
 function getInput(){
   const isDown=(...names)=>names.some(n=>held.has(n)||virtual.has(n));
@@ -323,6 +324,7 @@ function getInput(){
 const SHOT_MODES=[{name:'THƯỜNG',toast:'SÚT THƯỜNG: MẠNH VÀ THẲNG'},{name:'ĐẶT LÒNG',toast:'ĐẶT LÒNG: CHẬM HƠN, BÓNG XOÁY'},{name:'LỐP',toast:'SÚT LỐP: BÓNG BỔNG QUA TẦM VỚI'}];
 function cycleShotMode(){game.shotMode=(game.shotMode+1)%SHOT_MODES.length;const label=SHOT_MODES[game.shotMode].name;$('shot-mode-button').textContent=`KIỂU: ${label}`;$('shot-mode-button').setAttribute('aria-label',`Đổi kiểu sút — hiện tại: ${label}`);$('announcer').textContent=SHOT_MODES[game.shotMode].toast;}
 function beginCharge(){if(!game.active||game.paused||game.ended||game.charging)return;game.charging=true;game.charge=.05;$('power-wrap').classList.add('visible');}
+function cancelShotCharge(){if(!game.charging)return;game.charging=false;game.charge=0;$('power-wrap').classList.remove('visible');$('power-fill').style.width='0%';}
 function fireShot(){
   if(!game.charging)return;
   game.charging=false;$('power-wrap').classList.remove('visible');
@@ -347,7 +349,7 @@ function fireShot(){
 }
 function scoreGoal(){
   goalkeeperRL.resolveShot('goal');
-  game.score++;updateScore();setToast('VÀOOOO! KHÁN ĐÀI BÙNG NỔ!');
+  game.score++;updateScore();setToast('VÀOOOO! KHÁN ĐÀI BÙNG NỔ!');$('announcer').textContent=formatGoalAnnouncement(game.score);
   ball.inFlight=false;ball.vx=ball.vz=ball.vy=0;
   if(game.score>=3){showResult(true);return;}
   resetPositions();playerState.x=0;playerState.z=27;playerState.homeZ=27;player.position.set(0,0,27);Object.assign(ball,{x:0,z:25.7,h:.59});keeperX=0;homeKeeperX=0;keeperPolicyTarget=0;keeperReactiveTarget=0;
@@ -419,11 +421,11 @@ function deflectFromDefender(){
 function updateBall(dt){
   if(!ball.inFlight){const forwardX=Math.sin(playerState.yaw),forwardZ=-Math.cos(playerState.yaw),carry=.62+Math.min(.34,Math.hypot(playerState.vx,playerState.vz)*.035),targetX=playerState.x+forwardX*carry,targetZ=playerState.z+forwardZ*carry,blend=1-Math.exp(-dt*14),oldX=ball.x,oldZ=ball.z;ball.x+=(targetX-ball.x)*blend;ball.z+=(targetZ-ball.z)*blend;ball.vx=(ball.x-oldX)/Math.max(dt,.001);ball.vz=(ball.z-oldZ)/Math.max(dt,.001);ball.h=.59;ball.vy=0;}
   else{
-    ball.shotTime+=dt;ball.pickupDelay=Math.max(0,ball.pickupDelay-dt);ball.vx+=ball.curve*dt;ball.x+=ball.vx*dt;ball.z+=ball.vz*dt;ball.h+=ball.vy*dt;ball.vy-=ball.gravity*dt;
+    ball.shotTime+=dt;ball.pickupDelay=Math.max(0,ball.pickupDelay-dt);ball.vx+=ball.curve*dt;ball.x+=ball.vx*dt;ball.z+=ball.vz*dt;ball.h+=ball.vy*dt;ball.vy-=ball.gravity*dt;applyBallFlightDamping(ball,dt);
     if(ball.h<.59){ball.h=.59;if(ball.vy< -1.7){ball.vy=-ball.vy*.32;ball.vx*=.82;ball.vz*=.82;}else ball.vy=0;}
     const touched=deflectFromDefender();
     if(!touched&&ball.vz<0&&ball.z<=-54.6&&!ball.goalResolved){
-      if(Math.abs(ball.x)<7.95&&ball.h<4.0){if(!resolveKeeperSave()){scoreGoal();return;}}
+      if(ballFitsGoalMouth(ball)){if(!resolveKeeperSave()){scoreGoal();return;}}
       else if(ball.z<-58.6){goalkeeperRL.discardShot();ball.inFlight=false;setToast('CÚ SÚT LỆCH KHUNG THÀNH');}
     }
     if(ball.inFlight&&(Math.abs(ball.x)>34||ball.z>56||ball.shotTime>5.2)){goalkeeperRL.discardShot();ball.inFlight=false;setToast('BÓNG RA NGOÀI — NHẬN LẠI BÓNG');}
@@ -444,21 +446,23 @@ function updateGame(dt){
   if(game.time<=0)showResult(false);
 }
 const desiredCamera=new THREE.Vector3();const lookAt=new THREE.Vector3();
+function scheduleFrame(){if(frameScheduled)return;frameScheduled=true;requestAnimationFrame(animate);}
 function animate(now){
-  requestAnimationFrame(animate);
+  frameScheduled=false;
   const dt=Math.min(.038,Math.max(0,(now-lastFrame)/1000));lastFrame=now;
-  if(game.active)updateGame(dt);
-  else if(game.paused){/* Giữ nguyên trạng thái trên sân trong khi trận đấu tạm dừng. */}
-  else if(!game.ended&&game.toastTime>0){game.toastTime-=dt;hideToast();}
-  const camHeight=game.active?8.7:9.4;
-  desiredCamera.set(playerState.x*.83,camHeight,playerState.z+15.8);
-  camera.position.lerp(desiredCamera,1-Math.exp(-dt*3.6));
-  lookAt.set(playerState.x*.54,1.15,playerState.z-17.5);camera.lookAt(lookAt);
-  if(game.active)renderer.render(scene,camera);
+  if(game.active){
+    updateGame(dt);
+    if(game.active){
+      desiredCamera.set(playerState.x*.83,8.7,playerState.z+15.8);
+      camera.position.lerp(desiredCamera,1-Math.exp(-dt*3.6));
+      lookAt.set(playerState.x*.54,1.15,playerState.z-17.5);camera.lookAt(lookAt);
+      renderer.render(scene,camera);
+    }
+  }else if(!game.paused&&!game.ended&&game.toastTime>0){game.toastTime-=dt;hideToast();}
+  if(game.active||(!game.paused&&!game.ended&&game.toastTime>0))scheduleFrame();
 }
 function resize(){const width=world.clientWidth||window.innerWidth,height=world.clientHeight||window.innerHeight;camera.aspect=width/height;camera.fov=width<650?61:55;camera.updateProjectionMatrix();renderer.setSize(width,height,false);}
 window.addEventListener('resize',resize,{passive:true});resize();
-requestAnimationFrame((t)=>{lastFrame=t;animate(t);});
 
 mountLearningControls(()=>{keeperPolicyTarget=0;keeperReactiveTarget=0;setToast('ĐÃ XÓA BỘ NHỚ HỌC CỦA THỦ MÔN');});
 
@@ -467,18 +471,22 @@ $('restart-button').addEventListener('click',beginMatch);
 $('restart-pause-button').addEventListener('click',beginMatch);
 $('resume-button').addEventListener('click',resumeMatch);
 $('pause-button').addEventListener('click',togglePause);$('shot-mode-button').addEventListener('click',cycleShotMode);
-for(const button of document.querySelectorAll('[data-key]')){
-  const key=button.dataset.key;
-  const down=(event)=>{event.preventDefault();virtual.add(key);button.classList.add('pressed');try{button.setPointerCapture(event.pointerId);}catch{}};
-  const up=(event)=>{event.preventDefault();virtual.delete(key);button.classList.remove('pressed');};
-  button.addEventListener('pointerdown',down);button.addEventListener('pointerup',up);button.addEventListener('pointercancel',up);button.addEventListener('lostpointercapture',up);
+function bindVirtualControl(button,key){
+  const down=e=>{e.preventDefault();virtual.add(key);button.classList.add('pressed');if(Number.isInteger(e.pointerId)){try{button.setPointerCapture(e.pointerId);}catch{}}};
+  const up=e=>{e.preventDefault();virtual.delete(key);button.classList.remove('pressed');};
+  button.addEventListener('pointerdown',down);for(const ev of ['pointerup','pointercancel','lostpointercapture'])button.addEventListener(ev,up);
+  button.addEventListener('keydown',e=>{if(e.code!=='Enter'&&e.code!=='Space')return;e.preventDefault();e.stopPropagation();if(!e.repeat)down(e);});
+  button.addEventListener('keyup',e=>{if(e.code!=='Enter'&&e.code!=='Space')return;e.preventDefault();e.stopPropagation();up(e);});
 }
-const sprintButton=$('sprint-button');
-sprintButton.addEventListener('pointerdown',(e)=>{e.preventDefault();virtual.add('Sprint');sprintButton.classList.add('pressed');try{sprintButton.setPointerCapture(e.pointerId);}catch{}});
-for(const ev of ['pointerup','pointercancel','lostpointercapture'])sprintButton.addEventListener(ev,()=>{virtual.delete('Sprint');sprintButton.classList.remove('pressed');});
+for(const button of document.querySelectorAll('[data-key]'))bindVirtualControl(button,button.dataset.key);
+bindVirtualControl($('sprint-button'),'Sprint');
 const shootButton=$('shoot-button');
-shootButton.addEventListener('pointerdown',(e)=>{e.preventDefault();if(game.active){shootButton.classList.add('pressed');try{shootButton.setPointerCapture(e.pointerId);}catch{}beginCharge();}});
-for(const ev of ['pointerup','pointercancel','lostpointercapture'])shootButton.addEventListener(ev,(e)=>{e.preventDefault();shootButton.classList.remove('pressed');fireShot();});
+const pressShot=e=>{e.preventDefault();if(!game.active)return;shootButton.classList.add('pressed');if(Number.isInteger(e.pointerId)){try{shootButton.setPointerCapture(e.pointerId);}catch{}}beginCharge();};
+const releaseShot=e=>{e.preventDefault();shootButton.classList.remove('pressed');fireShot();};
+const cancelShot=e=>{e.preventDefault();shootButton.classList.remove('pressed');cancelShotCharge();};
+shootButton.addEventListener('pointerdown',pressShot);shootButton.addEventListener('pointerup',releaseShot);shootButton.addEventListener('pointercancel',cancelShot);shootButton.addEventListener('lostpointercapture',cancelShot);
+shootButton.addEventListener('keydown',e=>{if(e.code!=='Enter')return;e.preventDefault();e.stopPropagation();if(!e.repeat)pressShot(e);});
+shootButton.addEventListener('keyup',e=>{if(e.code!=='Enter')return;e.preventDefault();e.stopPropagation();releaseShot(e);});
 window.addEventListener('keydown',(e)=>{
   if(e.code==='Escape'){e.preventDefault();togglePause();return;}
   if(e.code==='KeyQ'&&!e.repeat){e.preventDefault();cycleShotMode();return;}
@@ -491,5 +499,5 @@ window.addEventListener('keyup',(e)=>{
   held.delete(e.code);
   if(e.code==='Space'){e.preventDefault();fireShot();}
 });
-window.addEventListener('blur',()=>{held.clear();virtual.clear();if(game.charging)fireShot();});
+window.addEventListener('blur',()=>{held.clear();virtual.clear();cancelShotCharge();for(const button of document.querySelectorAll('.pressed'))button.classList.remove('pressed');});
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&game.active)pauseMatch();});

@@ -16,3 +16,5 @@
 
 .match-format{display:inline-block;padding:4px 6px;border:1px solid rgba(197,250,88,.32);border-radius:3px;background:rgba(197,250,88,.09);color:var(--lime);font:900 8px "Barlow Condensed",sans-serif;letter-spacing:.1em;white-space:nowrap}
 @media(max-width:760px){.match-format{padding:3px 5px;font-size:7px}}
+
+@media(max-width:760px) and (max-height:620px){.game-shell{min-height:100dvh}.overlay{overflow-y:auto;align-items:flex-start;-webkit-overflow-scrolling:touch}.intro-card{margin:auto 0}.photo-credit{display:none}}
