@@ -8,12 +8,12 @@
 ## Tóm tắt audit
 
 - Runtime báo **11 người mỗi đội, 10 cầu thủ sân mỗi bên + 1 thủ môn, tổng 22**; kiểm tra trên Canvas 2D.
-- Unit suite hiện có **14/14 pass**, gồm AI 60 giây/đổi possession, chạy chỗ né lane đông, goal aperture, damping theo dt, accessible score announcement, RAF/input/layout và focus contract cho cả hai renderer. Source và `dist` qua cú pháp và byte-parity.
+- Unit suite hiện có **21/21 pass**, gồm AI 60 giây/đổi possession, chạy chỗ né lane đông, goal aperture, damping theo dt, rebound sau cứu thua, input/RAF/layout và focus contract cho cả hai renderer. Source và `dist` qua cú pháp và byte-parity.
 - Desktop đã thao tác WASD, Shift, Space, Q, Escape, resume, restart; mobile `390×844` và landscape thấp `667×360` thử D-pad/sprint/shoot/shot mode/pause/resume/restart, Enter/Space trên các touch controls, không tràn ngang và mọi nút nằm trong viewport.
 - Đo Canvas loop: trước sửa pause 524 callback/2s; sau sửa **0 callback trong 2s paused** sau khi toast hết, đồng hồ đứng; resume khởi động lại khoảng 234 callback/2s trong lần đo và restart tiếp tục.
 - Local browser console **0 errors**; một warning WebGL2 do Playwright báo `AllowWebgl2:false`. Chỉ chạy Canvas fallback runtime; WebGL đã syntax/unit/source-check, không khẳng định đã chạy runtime.
 - Nguồn chính thức EA FC 27 mô tả AI phản ứng với khoảng trống và tránh khu vực đông; algorithm không công bố. Heuristic né lane của game là thiết kế độc lập, không suy đoán thuật toán proprietary.
-- Không thêm analytics/tài khoản/thu thập dữ liệu/chi phí. Render dùng static `dist`; cả commit gameplay và bản sửa focus warning đều đã live. Production không có JavaScript/focus warning; còn một warning WebGL2 từ giới hạn môi trường test.
+- Không thêm analytics/tài khoản/thu thập dữ liệu/chi phí. Render dùng static `dist`; commit `94e1db8` cho rebound/keyboard đã live cùng bản sửa focus warning trước đó. Production không có JavaScript errors; còn một warning WebGL2 do giới hạn môi trường test.
 
 ## Backlog và kết quả
 
