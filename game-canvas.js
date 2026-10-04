@@ -246,6 +246,7 @@ function resetPositions(){
   keys.clear();virtual.clear();keyboardShotPending=false;cancelShotCharge();
 }
 function beginMatch(){
+  closeModal($('intro'));
   closeModal($('pause-overlay'));closeModal($('result-overlay'));
   game.active=true;game.paused=false;game.ended=false;game.score=0;game.time=90;game.lastWhole=90;game.toastTime=0;
   for(const id of ['intro','pause-overlay','result-overlay']){$(id).classList.add('hidden');$(id).setAttribute('aria-hidden','true');}
@@ -356,6 +357,7 @@ function frame(now){frameScheduled=false;const dt=Math.min(.038,Math.max(0,(now-
 mountLearningControls(()=>{keeperPolicyTarget=0;setToast('ĐÃ XÓA BỘ NHỚ HỌC CỦA THỦ MÔN');});
 
 $('start-button').addEventListener('click',beginMatch);$('restart-button').addEventListener('click',beginMatch);$('restart-pause-button').addEventListener('click',beginMatch);$('resume-button').addEventListener('click',resumeMatch);$('pause-button').addEventListener('click',togglePause);$('shot-mode-button').addEventListener('click',cycleShotMode);
+openModal($('intro'),$('start-button'));
 function bindVirtualControl(button,key){
   const down=e=>{e.preventDefault();virtual.add(key);button.classList.add('pressed');if(Number.isInteger(e.pointerId)){try{button.setPointerCapture(e.pointerId);}catch{}}};
   const up=e=>{e.preventDefault();virtual.delete(key);button.classList.remove('pressed');};

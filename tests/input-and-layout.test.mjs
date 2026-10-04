@@ -52,6 +52,14 @@ test('khi bắt đầu trận, focus rời intro bị ẩn và chuyển tới v�
   }
 });
 
+test('intro mở như modal, focus được giữ bên trong và nền được trả lại khi bắt đầu trận', () => {
+  assert.match(html, /<section class="overlay intro" id="intro"[^>]*role="dialog"[^>]*aria-modal="true"[^>]*aria-labelledby="intro-title"/);
+  for (const source of [canvas, webgl]) {
+    assert.match(source, /openModal\(\$\('intro'\),\$\('start-button'\)\)/);
+    assert.match(source, /function beginMatch\(\)\{[\s\S]*?closeModal\(\$\('intro'\)\)/);
+  }
+});
+
 test('pause/result là dialog modal, giữ focus bên trong và vô hiệu hóa nền khi mở', () => {
   assert.match(html, /id="pause-overlay"[^>]*role="dialog"[^>]*aria-modal="true"/);
   assert.match(html, /id="result-overlay"[^>]*role="dialog"[^>]*aria-modal="true"/);
